@@ -1,0 +1,4 @@
+research_task:
+  description: Research the future of AI automation systems
+  expected_output: A short explanation about AI automation trends
+  agent: researcher
