@@ -1,3 +1,14 @@
+import os
+
+import pytest
+
+
+if not os.getenv("AIOS_RUN_BROWSER_TESTS"):
+    pytest.skip(
+        "Browser integration script requires AIOS_RUN_BROWSER_TESTS=1",
+        allow_module_level=True,
+    )
+
 from tools.browser import browser
 
 
@@ -33,7 +44,6 @@ print("\nLINKS FOUND:")
 print(len(links))
 
 for link in links[:10]:
-
     print(
         link["text"],
         "->",
