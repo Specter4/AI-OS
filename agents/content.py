@@ -33,21 +33,17 @@ Rules:
 
 
 def create_content(task: str):
-
+    """Generate content for a task."""
     log(f"Content Agent received task: {task}")
 
     messages = [
-        {
-            "role": "system",
-            "content": SYSTEM_PROMPT
-        },
-        {
-            "role": "user",
-            "content": task
-        }
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": task},
     ]
 
-    return llm.generate(
-        messages,
-        agent="content"
-    )
+    return llm.generate(messages, agent="content")
+
+
+def write_content(task: str):
+    """Backward-compatible public interface used by older callers."""
+    return create_content(task)
