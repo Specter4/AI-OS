@@ -11,7 +11,7 @@ whole Python process.
 from dataclasses import dataclass
 from enum import Enum
 from threading import RLock
-from typing import Any, Callable
+from typing import Any, Callable, List
 
 
 class Permission(str, Enum):
@@ -79,7 +79,7 @@ class ToolRegistry:
         with self._lock:
             return sorted(self._tools.values(), key=lambda tool: tool.name)
 
-    def describe(self) -> list[dict[str, str]]:
+    def describe(self) -> List[dict[str, str]]:
         return [
             {
                 "name": tool.name,
