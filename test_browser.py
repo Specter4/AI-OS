@@ -1,3 +1,10 @@
+"""Browser integration tests.
+
+These tests are opt-in because they launch a real browser and depend on
+external websites. They are intentionally deterministic and do not use
+interactive input so pytest can collect them safely.
+"""
+
 import os
 
 import pytest
@@ -5,53 +12,31 @@ import pytest
 
 if not os.getenv("AIOS_RUN_BROWSER_TESTS"):
     pytest.skip(
-        "Browser integration script requires AIOS_RUN_BROWSER_TESTS=1",
+        "Browser integration tests require AIOS_RUN_BROWSER_TESTS=1",
         allow_module_level=True,
     )
 
 from tools.browser import browser
 
 
-# Open a website
-result = browser.open(
-    "https://www.google.com"
-)
-
-print("\nOPEN:")
-print(result)
+@pytest.fixture(scope="module", autouse=True)
+def browser_session():
+    yield
+    browser.close()
 
 
-# Search
-result = browser.search(
-    "Dentist websites"
-)
-
-print("\nSEARCH:")
-print(result)
+def test_open_example():
+    result = browser.open("https://example.com")
+    assert result["url"].startswith("https://example.com")
 
 
-# Extract page text
-text = browser.extract_text()
-
-print("\nPAGE TEXT:")
-print(text[:1000])
-
-
-# Extract links
-links = browser.extract_links()
-
-print("\nLINKS FOUND:")
-print(len(links))
-
-for link in links[:10]:
-    print(
-        link["text"],
-        "->",
-        link["href"]
-    )
+def test_extract_example_text():
+    browser.open("https://example.com")
+    text = browser.extract_text()
+    assert "Example Domain" in text
 
 
-# Close browser
-input("\nPress ENTER to close the browser...")
-
-browser.close()
+def test_extract_example_links():
+    browser.open("https://example.com")
+    links = browser.extract_links()
+    assert any("iana.org" in link["href"] for link in links)
