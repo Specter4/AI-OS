@@ -1,3 +1,9 @@
+"""Browser-agent integration tests.
+
+Opt-in because these tests launch a real browser. They use example.com so
+normal test runs are not dependent on search engines or bot-detection pages.
+"""
+
 import os
 
 import pytest
@@ -5,51 +11,35 @@ import pytest
 
 if not os.getenv("AIOS_RUN_BROWSER_TESTS"):
     pytest.skip(
-        "Browser integration script requires AIOS_RUN_BROWSER_TESTS=1",
+        "Browser-agent integration tests require AIOS_RUN_BROWSER_TESTS=1",
         allow_module_level=True,
     )
 
 from agents.browser import browser_agent
-
-
-print("\n=== TEST 1: OPEN ===")
-
-result = browser_agent.execute(
-    "open https://example.com"
-)
-
-print(result)
-
-
-print("\n=== TEST 2: CURRENT PAGE ===")
-
-result = browser_agent.execute(
-    "current page"
-)
-
-print(result)
-
-
-print("\n=== TEST 3: EXTRACT TEXT ===")
-
-result = browser_agent.execute(
-    "extract page text"
-)
-
-print(result)
-
-
-print("\n=== TEST 4: EXTRACT LINKS ===")
-
-result = browser_agent.execute(
-    "extract links"
-)
-
-print(result)
-
-
-input("\nPress ENTER to close the browser...")
-
 from tools.browser import browser
 
-browser.close()
+
+@pytest.fixture(scope="module", autouse=True)
+def browser_session():
+    yield
+    browser.close()
+
+
+def test_agent_open():
+    result = browser_agent.execute("open https://example.com")
+    assert result["url"].startswith("https://example.com")
+
+
+def test_agent_current_page():
+    result = browser_agent.execute("current page")
+    assert result["url"].startswith("https://example.com")
+
+
+def test_agent_extract_text():
+    result = browser_agent.execute("extract page text")
+    assert "Example Domain" in result
+
+
+def test_agent_extract_links():
+    result = browser_agent.execute("extract links")
+    assert any("iana.org" in link["href"] for link in result)
