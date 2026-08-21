@@ -1,9 +1,21 @@
+import pytest
+
 from core.router import route_message
 
-print(route_message("My company is Nova Studio"))
 
-print(route_message("Research AI website ideas"))
+def test_ai_router_smoke(monkeypatch):
+    """Router tests must not require a running Ollama server."""
+    seen = []
 
-print(route_message("Can you explain Python decorators?"))
+    def fake_classify(message):
+        seen.append(message)
+        return {"intent": "conversation", "content": message}
 
-print(route_message("Remember that my client budget is $2000"))
+    monkeypatch.setattr("core.router.classify", fake_classify)
+
+    assert route_message("My company is Nova Studio") == {
+        "intent": "conversation",
+        "content": "My company is Nova Studio",
+    }
+    assert route_message("Research AI website ideas")["content"] == "Research AI website ideas"
+    assert len(seen) == 2
