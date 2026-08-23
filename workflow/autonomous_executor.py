@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from agents.tool_agent import ToolAgent
 from core.logger import log
 from core.result import AgentResult
 from core.tasks import Task
@@ -79,6 +78,30 @@ class ProjectTaskAgent:
                 "error": str(exc),
             }
 
+    def context_snapshot(self) -> dict[str, Any]:
+        """Return compact state for autonomous evaluation and recovery."""
+        tasks = []
+        for task in self.project.tasks:
+            tasks.append(
+                {
+                    "id": task.id,
+                    "title": task.title,
+                    "agent": task.agent,
+                    "status": task.status,
+                    "depends_on": list(task.depends_on),
+                    "result": task.result,
+                }
+            )
+
+        return {
+            "goal": self.project.goal,
+            "status": self.project.status,
+            "progress": self.project.progress(),
+            "tasks": tasks,
+            "shared_context": self.project.context_data(),
+            "notes": list(self.project.notes),
+        }
+
 
 def execute_autonomous(
     goal: str,
@@ -87,13 +110,7 @@ def execute_autonomous(
     max_steps: int = 4,
     approved_permissions=None,
 ) -> tuple[Any, AutonomyResult | None]:
-    """Run the normal executor, then bounded autonomous recovery if needed.
-
-    This intentionally does not replace deterministic planning/execution.
-    Autonomous recovery activates only when the initial project contains
-    failed or blocked tasks, preventing unnecessary LLM replanning on clean
-    runs.
-    """
+    """Run the normal executor, then bounded autonomous recovery if needed."""
     project = execute(goal, tasks)
 
     failed_or_blocked = [
@@ -115,6 +132,7 @@ def execute_autonomous(
     loop = AutonomyLoop(
         agent=adapter,
         max_steps=max_steps,
+        context_provider=adapter.context_snapshot,
     )
     recovery = loop.run(
         goal,
