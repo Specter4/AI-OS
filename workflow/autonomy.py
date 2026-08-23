@@ -7,6 +7,7 @@ LLM output.
 
 from __future__ import annotations
 
+import inspect
 import json
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -117,6 +118,29 @@ class AutonomyLoop:
 
         return {"complete": False, "next_task": next_task.strip()}
 
+    def _evaluate_compatibly(
+        self,
+        goal: str,
+        observations: list[Observation],
+        context: Any,
+    ) -> dict[str, Any]:
+        """Call custom evaluators using either the old or new signature.
+
+        Older tests/integrations commonly override ``evaluate(goal,
+        observations)``. Keep those integrations working while the built-in
+        evaluator accepts the new third ``context`` argument.
+        """
+        evaluator = self.evaluate
+        try:
+            parameters = inspect.signature(evaluator).parameters
+            accepts_context = len(parameters) >= 3
+        except (TypeError, ValueError):
+            accepts_context = True
+
+        if accepts_context:
+            return evaluator(goal, observations, context)
+        return evaluator(goal, observations)
+
     def run(
         self,
         goal: str,
@@ -157,7 +181,11 @@ class AutonomyLoop:
             observations.append(observation)
 
             try:
-                decision = self.evaluate(goal, observations, self._context())
+                decision = self._evaluate_compatibly(
+                    goal,
+                    observations,
+                    self._context(),
+                )
             except Exception as exc:
                 return AutonomyResult(False, goal, observations, str(exc))
 
