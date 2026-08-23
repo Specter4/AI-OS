@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from agents.tool_agent import ToolAgent, tool_agent
 from core.logger import log
@@ -38,14 +38,30 @@ class AutonomyResult:
 class AutonomyLoop:
     """Execute a goal through repeated plan/action/observation decisions."""
 
-    def __init__(self, agent: ToolAgent | None = None, max_steps: int = 8):
+    def __init__(
+        self,
+        agent: ToolAgent | None = None,
+        max_steps: int = 8,
+        context_provider: Callable[[], Any] | None = None,
+    ):
         if max_steps < 1:
             raise ValueError("max_steps must be at least 1")
         self.agent = agent or tool_agent
         self.max_steps = max_steps
+        self.context_provider = context_provider
 
-    def evaluate(self, goal: str, observations: list[Observation]) -> dict[str, Any]:
-        """Ask the LLM whether the goal is complete and what to do next."""
+    def _context(self) -> Any:
+        if self.context_provider is None:
+            return None
+        return self.context_provider()
+
+    def evaluate(
+        self,
+        goal: str,
+        observations: list[Observation],
+        context: Any = None,
+    ) -> dict[str, Any]:
+        """Ask the LLM whether the goal is complete using full project state."""
         history = [
             {
                 "step": item.step,
@@ -59,19 +75,23 @@ class AutonomyLoop:
         ]
 
         prompt = (
-            "You are the evaluation layer of AI-OS.\n"
-            "Evaluate the current goal using the execution history.\n"
+            "You are the evaluation and recovery-planning layer of AI-OS.\n"
+            "Evaluate the current goal using project state and execution history.\n"
+            "Prefer reusing successful work. Do not repeat completed tasks unless "
+            "the evidence shows they are invalid or insufficient.\n"
+            "If a task failed, identify the smallest concrete recovery action.\n"
             "Return ONLY JSON in this exact shape:\n"
             '{"complete": true, "next_task": null}\n'
             "or:\n"
             '{"complete": false, "next_task": "a concrete next action"}\n\n'
             f"GOAL:\n{goal}\n\n"
+            f"PROJECT STATE:\n{json.dumps(context, indent=2, default=str)}\n\n"
             f"EXECUTION HISTORY:\n{json.dumps(history, indent=2, default=str)}"
         )
 
         result = llm.generate(
             [
-                {"role": "system", "content": "Evaluate progress; do not execute tools."},
+                {"role": "system", "content": "Evaluate progress and plan recovery; do not execute tools."},
                 {"role": "user", "content": prompt},
             ],
             agent="autonomy_evaluator",
@@ -137,7 +157,7 @@ class AutonomyLoop:
             observations.append(observation)
 
             try:
-                decision = self.evaluate(goal, observations)
+                decision = self.evaluate(goal, observations, self._context())
             except Exception as exc:
                 return AutonomyResult(False, goal, observations, str(exc))
 
