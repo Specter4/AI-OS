@@ -11,7 +11,7 @@ from core.tool_registry import Permission, registry
 
 
 class ToolAgent:
-    """Small execution layer used by agents that need registered tools."""
+    """Execution gateway used by agents that need registered tools."""
 
     def available_tools(self) -> list[dict[str, str]]:
         return registry.describe()
