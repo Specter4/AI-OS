@@ -8,6 +8,7 @@ concrete recovery actions through the existing dispatcher.
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 from core.logger import log
@@ -129,11 +130,27 @@ def execute_autonomous(
     )
 
     adapter = ProjectTaskAgent(project)
-    loop = AutonomyLoop(
-        agent=adapter,
-        max_steps=max_steps,
-        context_provider=adapter.context_snapshot,
-    )
+
+    # Keep compatibility with lightweight/custom AutonomyLoop implementations
+    # that predate the context_provider extension. The real AutonomyLoop gets
+    # the provider; older test doubles can still be constructed normally.
+    try:
+        parameters = inspect.signature(AutonomyLoop).parameters
+        accepts_context_provider = "context_provider" in parameters
+    except (TypeError, ValueError):
+        accepts_context_provider = True
+
+    if accepts_context_provider:
+        loop = AutonomyLoop(
+            agent=adapter,
+            max_steps=max_steps,
+            context_provider=adapter.context_snapshot,
+        )
+    else:
+        loop = AutonomyLoop(agent=adapter, max_steps=max_steps)
+        if hasattr(loop, "context_provider"):
+            loop.context_provider = adapter.context_snapshot
+
     recovery = loop.run(
         goal,
         approved_permissions=approved_permissions,
