@@ -132,16 +132,8 @@ def execute_task(task, supervisor, project, checkpoint=None):
         return task
 
 
-def execute(goal, tasks, *, project_id=None, project_root="data/projects"):
-    """Execute tasks, optionally checkpointing state for later resume.
-
-    Existing callers remain unchanged. Pass ``project_id`` to make execution
-    interruption-safe; each task completion/failure and final state is saved.
-    """
-    log("Starting task execution...")
-
-    normalized_tasks = [normalize_task(task, index) for index, task in enumerate(tasks, start=1)]
-    project = Project(goal=goal, tasks=normalized_tasks)
+def _run_project(project, *, project_id=None, project_root="data/projects"):
+    """Run pending tasks in a project, preserving completed task state."""
 
     def checkpoint():
         if project_id:
@@ -211,3 +203,38 @@ def execute(goal, tasks, *, project_id=None, project_root="data/projects"):
     checkpoint()
     log(f"Project finished ({project.progress()}%)")
     return project
+
+
+def execute(goal, tasks, *, project_id=None, project_root="data/projects"):
+    """Create and execute a new project, optionally checkpointing state."""
+    log("Starting task execution...")
+    normalized_tasks = [normalize_task(task, index) for index, task in enumerate(tasks, start=1)]
+    project = Project(goal=goal, tasks=normalized_tasks)
+    return _run_project(project, project_id=project_id, project_root=project_root)
+
+
+def resume_project(project_id, *, project_root="data/projects"):
+    """Resume a persisted project without rerunning completed tasks.
+
+    Failed tasks are reset to ``pending`` because they are recoverable work.
+    Blocked tasks are reset only when their dependencies are no longer failed or
+    blocked. Dependency validation is performed again before any work runs.
+    """
+    log(f"Resuming persisted project: {project_id}")
+    project = Project.resume(project_id, project_root)
+
+    for task in project.tasks:
+        if task.status == "failed":
+            task.status = "pending"
+            task.result = None
+            log(f"Reset failed Task {task.id} for retry.")
+
+    task_map = validate_dependency_graph(project.tasks)
+    for task in project.tasks:
+        if task.status == "blocked" and not dependency_blocked(task, task_map):
+            task.status = "pending"
+            task.result = None
+            log(f"Unblocked Task {task.id} for resume.")
+
+    project.status = "running"
+    return _run_project(project, project_id=project_id, project_root=project_root)
