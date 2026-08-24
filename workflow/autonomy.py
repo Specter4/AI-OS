@@ -2,7 +2,8 @@
 
 The loop is deliberately policy-first: a selected tool may execute only when
 its permission is already approved. The loop never grants permissions based on
-LLM output.
+LLM output. Failures are classified by the deterministic recovery policy before
+an LLM is allowed to suggest a new plan.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from agents.tool_agent import ToolAgent, tool_agent
 from core.logger import log
 from core.tool_registry import Permission
 from services.llm import llm
+from workflow.recovery import RecoveryDecision, classify_failure
 
 
 @dataclass
@@ -26,6 +28,8 @@ class Observation:
     success: bool
     result: Any = None
     error: str | None = None
+    recovery_action: str | None = None
+    recovery_reason: str | None = None
 
 
 @dataclass
@@ -39,12 +43,7 @@ class AutonomyResult:
 class AutonomyLoop:
     """Execute a goal through repeated plan/action/observation decisions."""
 
-    def __init__(
-        self,
-        agent: ToolAgent | None = None,
-        max_steps: int = 8,
-        context_provider: Callable[[], Any] | None = None,
-    ):
+    def __init__(self, agent: ToolAgent | None = None, max_steps: int = 8, context_provider: Callable[[], Any] | None = None):
         if max_steps < 1:
             raise ValueError("max_steps must be at least 1")
         self.agent = agent or tool_agent
@@ -56,150 +55,101 @@ class AutonomyLoop:
             return None
         return self.context_provider()
 
-    def evaluate(
-        self,
-        goal: str,
-        observations: list[Observation],
-        context: Any = None,
-    ) -> dict[str, Any]:
+    def evaluate(self, goal: str, observations: list[Observation], context: Any = None) -> dict[str, Any]:
         """Ask the LLM whether the goal is complete using full project state."""
         history = [
-            {
-                "step": item.step,
-                "task": item.task,
-                "tool": item.tool,
-                "success": item.success,
-                "result": item.result,
-                "error": item.error,
-            }
+            {"step": item.step, "task": item.task, "tool": item.tool, "success": item.success,
+             "result": item.result, "error": item.error, "recovery_action": item.recovery_action,
+             "recovery_reason": item.recovery_reason}
             for item in observations
         ]
-
         prompt = (
             "You are the evaluation and recovery-planning layer of AI-OS.\n"
             "Evaluate the current goal using project state and execution history.\n"
-            "Prefer reusing successful work. Do not repeat completed tasks unless "
-            "the evidence shows they are invalid or insufficient.\n"
-            "If a task failed, identify the smallest concrete recovery action.\n"
+            "Prefer reusing successful work. Do not repeat completed tasks unless the evidence shows they are invalid or insufficient.\n"
+            "If a task failed and the recovery policy says replan, identify the smallest concrete recovery action.\n"
             "Return ONLY JSON in this exact shape:\n"
             '{"complete": true, "next_task": null}\n'
             "or:\n"
             '{"complete": false, "next_task": "a concrete next action"}\n\n'
-            f"GOAL:\n{goal}\n\n"
-            f"PROJECT STATE:\n{json.dumps(context, indent=2, default=str)}\n\n"
+            f"GOAL:\n{goal}\n\nPROJECT STATE:\n{json.dumps(context, indent=2, default=str)}\n\n"
             f"EXECUTION HISTORY:\n{json.dumps(history, indent=2, default=str)}"
         )
-
-        result = llm.generate(
-            [
-                {"role": "system", "content": "Evaluate progress and plan recovery; do not execute tools."},
-                {"role": "user", "content": prompt},
-            ],
-            agent="autonomy_evaluator",
-        )
-
+        result = llm.generate([
+            {"role": "system", "content": "Evaluate progress and plan recovery; do not execute tools."},
+            {"role": "user", "content": prompt},
+        ], agent="autonomy_evaluator")
         if not result.success:
             raise RuntimeError(result.error)
-
         try:
             decision = json.loads(result.output.strip())
         except (TypeError, json.JSONDecodeError) as exc:
             raise ValueError("Autonomy evaluator returned invalid JSON") from exc
-
         if not isinstance(decision.get("complete"), bool):
             raise ValueError("Autonomy evaluator returned invalid completion state")
-
         if decision["complete"]:
             return {"complete": True, "next_task": None}
-
         next_task = decision.get("next_task")
         if not isinstance(next_task, str) or not next_task.strip():
             raise ValueError("Autonomy evaluator returned no next task")
-
         return {"complete": False, "next_task": next_task.strip()}
 
-    def _evaluate_compatibly(
-        self,
-        goal: str,
-        observations: list[Observation],
-        context: Any,
-    ) -> dict[str, Any]:
-        """Call custom evaluators using either the old or new signature.
-
-        Older tests/integrations commonly override ``evaluate(goal,
-        observations)``. Keep those integrations working while the built-in
-        evaluator accepts the new third ``context`` argument.
-        """
+    def _evaluate_compatibly(self, goal: str, observations: list[Observation], context: Any) -> dict[str, Any]:
         evaluator = self.evaluate
         try:
-            parameters = inspect.signature(evaluator).parameters
-            accepts_context = len(parameters) >= 3
+            accepts_context = len(inspect.signature(evaluator).parameters) >= 3
         except (TypeError, ValueError):
             accepts_context = True
+        return evaluator(goal, observations, context) if accepts_context else evaluator(goal, observations)
 
-        if accepts_context:
-            return evaluator(goal, observations, context)
-        return evaluator(goal, observations)
+    @staticmethod
+    def _recovery(error: str | None) -> RecoveryDecision:
+        return classify_failure(error)
 
-    def run(
-        self,
-        goal: str,
-        *,
-        approved_permissions: set[Permission] | None = None,
-    ) -> AutonomyResult:
-        """Run observe/action/replan until completion or the step limit."""
+    def run(self, goal: str, *, approved_permissions: set[Permission] | None = None) -> AutonomyResult:
+        """Run observe/action/replan with deterministic, bounded failure recovery."""
         observations: list[Observation] = []
         next_task = goal
 
         for step in range(1, self.max_steps + 1):
             log(f"Autonomy step {step}: {next_task}")
-
             try:
-                action = self.agent.run_task(
-                    next_task,
-                    approved_permissions=approved_permissions,
-                )
+                action = self.agent.run_task(next_task, approved_permissions=approved_permissions)
             except Exception as exc:
-                observation = Observation(
-                    step=step,
-                    task=next_task,
-                    tool=None,
-                    success=False,
-                    error=str(exc),
-                )
-                observations.append(observation)
-                return AutonomyResult(False, goal, observations, str(exc))
+                action = {"success": False, "tool": None, "error": str(exc)}
 
+            success = bool(action.get("success"))
+            recovery = None if success else self._recovery(action.get("error"))
             observation = Observation(
                 step=step,
                 task=next_task,
                 tool=action.get("tool"),
-                success=bool(action.get("success")),
+                success=success,
                 result=action.get("result"),
                 error=action.get("error"),
+                recovery_action=recovery.action if recovery else None,
+                recovery_reason=recovery.reason if recovery else None,
             )
             observations.append(observation)
 
+            if not success and recovery is not None:
+                log(f"Autonomy recovery decision: {recovery.action} — {recovery.reason}")
+                if recovery.requires_approval:
+                    return AutonomyResult(False, goal, observations,
+                        "Explicit approval is required before this action can continue.")
+                if recovery.retry:
+                    continue
+
             try:
-                decision = self._evaluate_compatibly(
-                    goal,
-                    observations,
-                    self._context(),
-                )
+                decision = self._evaluate_compatibly(goal, observations, self._context())
             except Exception as exc:
                 return AutonomyResult(False, goal, observations, str(exc))
-
             if decision["complete"]:
                 return AutonomyResult(True, goal, observations)
-
             next_task = decision["next_task"]
 
-        return AutonomyResult(
-            False,
-            goal,
-            observations,
-            f"Autonomy step limit ({self.max_steps}) reached before completion.",
-        )
+        return AutonomyResult(False, goal, observations,
+            f"Autonomy step limit ({self.max_steps}) reached before completion.")
 
 
 # Shared autonomous execution loop.
