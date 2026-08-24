@@ -1,10 +1,4 @@
-"""Autonomous execution bridge for the main AI-OS executor.
-
-The normal dependency-aware executor remains the deterministic execution path.
-This module adds a bounded recovery layer: when a planned project does not
-finish cleanly, AI-OS can use the observe/action/re-plan loop to attempt
-concrete recovery actions through the existing dispatcher.
-"""
+"""Autonomous execution bridge for the main AI-OS executor."""
 
 from __future__ import annotations
 
@@ -29,71 +23,34 @@ class ProjectTaskAgent:
 
     def run_task(self, task: str, *, approved_permissions=None) -> dict[str, Any]:
         agent = detect_agent(task)
-        generated_task = Task(
-            id=self._next_id,
-            title=task,
-            agent=agent,
-        )
+        generated_task = Task(id=self._next_id, title=task, agent=agent)
         self._next_id += 1
-
-        log(
-            f"Autonomy generated Task {generated_task.id}: "
-            f"{task} -> {agent}"
-        )
-
+        log(f"Autonomy generated Task {generated_task.id}: {task} -> {agent}")
         try:
             result = dispatch(generated_task, project=self.project)
-
             if isinstance(result, AgentResult):
-                success = result.success
-                output = result.output
-                error = result.error
+                success, output, error = result.success, result.output, result.error
             elif isinstance(result, dict) and "success" in result:
-                success = bool(result["success"])
-                output = result
-                error = result.get("error")
+                success, output, error = bool(result["success"]), result, result.get("error")
             else:
-                success = True
-                output = result
-                error = None
-
+                success, output, error = True, result, None
             generated_task.result = result
             generated_task.status = "completed" if success else "failed"
             self.project.tasks.append(generated_task)
             self.project.save(f"task_{generated_task.id}", result)
-
-            return {
-                "success": success,
-                "tool": f"agent.{agent}",
-                "result": output,
-                "error": error,
-            }
-
+            return {"success": success, "tool": f"agent.{agent}", "result": output, "error": error}
         except Exception as exc:
             generated_task.status = "failed"
             generated_task.result = str(exc)
             self.project.tasks.append(generated_task)
-            return {
-                "success": False,
-                "tool": f"agent.{agent}",
-                "error": str(exc),
-            }
+            return {"success": False, "tool": f"agent.{agent}", "error": str(exc)}
 
     def context_snapshot(self) -> dict[str, Any]:
-        """Return compact state for autonomous evaluation and recovery."""
-        tasks = []
-        for task in self.project.tasks:
-            tasks.append(
-                {
-                    "id": task.id,
-                    "title": task.title,
-                    "agent": task.agent,
-                    "status": task.status,
-                    "depends_on": list(task.depends_on),
-                    "result": task.result,
-                }
-            )
-
+        tasks = [
+            {"id": t.id, "title": t.title, "agent": t.agent, "status": t.status,
+             "depends_on": list(t.depends_on), "result": t.result}
+            for t in self.project.tasks
+        ]
         return {
             "goal": self.project.goal,
             "status": self.project.status,
@@ -104,61 +61,34 @@ class ProjectTaskAgent:
         }
 
 
-def execute_autonomous(
-    goal: str,
-    tasks,
-    *,
-    max_steps: int = 4,
-    approved_permissions=None,
-) -> tuple[Any, AutonomyResult | None]:
-    """Run the normal executor, then bounded autonomous recovery if needed."""
+def execute_autonomous(goal: str, tasks, *, max_steps: int = 4, approved_permissions=None) -> tuple[Any, AutonomyResult | None]:
+    """Run normal execution, then bounded policy-controlled autonomous recovery."""
     project = execute(goal, tasks)
-
-    failed_or_blocked = [
-        task
-        for task in project.tasks
-        if task.status in {"failed", "blocked"}
-    ]
-
+    failed_or_blocked = [t for t in project.tasks if t.status in {"failed", "blocked"}]
     if not failed_or_blocked:
         log("Autonomous recovery not needed; project completed cleanly.")
         return project, None
 
-    log(
-        f"Autonomous recovery starting for {len(failed_or_blocked)} "
-        "failed/blocked tasks."
-    )
-
+    log(f"Autonomous recovery starting for {len(failed_or_blocked)} failed/blocked tasks.")
     adapter = ProjectTaskAgent(project)
-
-    # Keep compatibility with lightweight/custom AutonomyLoop implementations
-    # that predate the context_provider extension. The real AutonomyLoop gets
-    # the provider; older test doubles can still be constructed normally.
     try:
-        parameters = inspect.signature(AutonomyLoop).parameters
-        accepts_context_provider = "context_provider" in parameters
+        accepts_context_provider = "context_provider" in inspect.signature(AutonomyLoop).parameters
     except (TypeError, ValueError):
         accepts_context_provider = True
 
+    kwargs = {"agent": adapter, "max_steps": max_steps}
     if accepts_context_provider:
-        loop = AutonomyLoop(
-            agent=adapter,
-            max_steps=max_steps,
-            context_provider=adapter.context_snapshot,
-        )
-    else:
-        loop = AutonomyLoop(agent=adapter, max_steps=max_steps)
-        if hasattr(loop, "context_provider"):
-            loop.context_provider = adapter.context_snapshot
+        kwargs["context_provider"] = adapter.context_snapshot
+    loop = AutonomyLoop(**kwargs)
+    if not accepts_context_provider and hasattr(loop, "context_provider"):
+        loop.context_provider = adapter.context_snapshot
 
-    recovery = loop.run(
-        goal,
-        approved_permissions=approved_permissions,
-    )
+    recovery = loop.run(goal, approved_permissions=approved_permissions)
+    for decision in getattr(recovery, "recovery_decisions", []):
+        log(f"Recovery policy: {decision.action} - {decision.reason}")
 
     if recovery.success:
         log("Autonomous recovery completed successfully.")
     else:
         log(f"Autonomous recovery stopped: {recovery.error}")
-
     return project, recovery
