@@ -20,7 +20,7 @@ def test_conversation_engine_preserves_context(monkeypatch):
     assert first.success is True
     assert second.success is True
     assert any(m["content"] == "The project is called AI-OS." for m in seen[-1])
-    assert any(m["content"] == "The project is called AI-OS?" for m in seen[-1])
+    assert any(m["content"] == "What is the project called?" for m in seen[-1])
     history = get_history()
     assert len(history) == 4
     assert history[-1]["content"] == "The project is AI-OS."
