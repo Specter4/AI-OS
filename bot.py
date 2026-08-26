@@ -18,6 +18,13 @@ intents.message_content = True
 client = discord.Client(intents=intents)
 
 
+def _response_text(response):
+    """Normalize agent results and plain responses for the chat transport."""
+    if hasattr(response, "output"):
+        return response.output if response.success else f"❌ {response.error}"
+    return str(response)
+
+
 @client.event
 async def on_ready():
     print(f"✅ Logged in as {client.user}")
@@ -94,6 +101,7 @@ async def on_message(message):
     try:
         request = route(user_message)
         response = await asyncio.to_thread(handle_request, request)
+        response = _response_text(response)
 
         if len(response) > 1900:
             response = response[:1900]
