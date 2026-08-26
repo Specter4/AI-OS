@@ -1,9 +1,8 @@
 """Observe/action/replan loop for autonomous AI-OS execution.
 
-The loop is deliberately policy-first: a selected tool may execute only when
-its permission is already approved. The loop never grants permissions based on
-LLM output. Failures are classified by the deterministic recovery policy before
-an LLM is allowed to suggest a new plan.
+The loop is policy-first: the LLM can select a registered tool, but it cannot
+approve permissions. Elevated actions can pause for an application-supplied
+approval provider, while failures remain bounded by the recovery policy.
 """
 
 from __future__ import annotations
@@ -13,7 +12,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from agents.tool_agent import ToolAgent, tool_agent
+from agents.tool_agent import ApprovalProvider, ToolAgent, tool_agent
 from core.logger import log
 from core.tool_registry import Permission
 from services.llm import llm
@@ -43,12 +42,19 @@ class AutonomyResult:
 class AutonomyLoop:
     """Execute a goal through repeated plan/action/observation decisions."""
 
-    def __init__(self, agent: ToolAgent | None = None, max_steps: int = 8, context_provider: Callable[[], Any] | None = None):
+    def __init__(
+        self,
+        agent: ToolAgent | None = None,
+        max_steps: int = 8,
+        context_provider: Callable[[], Any] | None = None,
+        approval_provider: ApprovalProvider | None = None,
+    ):
         if max_steps < 1:
             raise ValueError("max_steps must be at least 1")
         self.agent = agent or tool_agent
         self.max_steps = max_steps
         self.context_provider = context_provider
+        self.approval_provider = approval_provider
 
     def _context(self) -> Any:
         if self.context_provider is None:
@@ -58,9 +64,16 @@ class AutonomyLoop:
     def evaluate(self, goal: str, observations: list[Observation], context: Any = None) -> dict[str, Any]:
         """Ask the LLM whether the goal is complete using full project state."""
         history = [
-            {"step": item.step, "task": item.task, "tool": item.tool, "success": item.success,
-             "result": item.result, "error": item.error, "recovery_action": item.recovery_action,
-             "recovery_reason": item.recovery_reason}
+            {
+                "step": item.step,
+                "task": item.task,
+                "tool": item.tool,
+                "success": item.success,
+                "result": item.result,
+                "error": item.error,
+                "recovery_action": item.recovery_action,
+                "recovery_reason": item.recovery_reason,
+            }
             for item in observations
         ]
         prompt = (
@@ -107,14 +120,18 @@ class AutonomyLoop:
         return classify_failure(error)
 
     def run(self, goal: str, *, approved_permissions: set[Permission] | None = None) -> AutonomyResult:
-        """Run observe/action/replan with deterministic, bounded failure recovery."""
+        """Run observe/action/replan with bounded recovery and approval gates."""
         observations: list[Observation] = []
         next_task = goal
 
         for step in range(1, self.max_steps + 1):
             log(f"Autonomy step {step}: {next_task}")
             try:
-                action = self.agent.run_task(next_task, approved_permissions=approved_permissions)
+                action = self.agent.run_task(
+                    next_task,
+                    approved_permissions=approved_permissions,
+                    approval_provider=self.approval_provider,
+                )
             except Exception as exc:
                 action = {"success": False, "tool": None, "error": str(exc)}
 
@@ -135,8 +152,12 @@ class AutonomyLoop:
             if not success and recovery is not None:
                 log(f"Autonomy recovery decision: {recovery.action} — {recovery.reason}")
                 if recovery.requires_approval:
-                    return AutonomyResult(False, goal, observations,
-                        "Explicit approval is required before this action can continue.")
+                    return AutonomyResult(
+                        False,
+                        goal,
+                        observations,
+                        "Explicit approval is required before this action can continue.",
+                    )
                 if recovery.retry:
                     continue
 
@@ -148,9 +169,15 @@ class AutonomyLoop:
                 return AutonomyResult(True, goal, observations)
             next_task = decision["next_task"]
 
-        return AutonomyResult(False, goal, observations,
-            f"Autonomy step limit ({self.max_steps}) reached before completion.")
+        return AutonomyResult(
+            False,
+            goal,
+            observations,
+            f"Autonomy step limit ({self.max_steps}) reached before completion.",
+        )
 
 
-# Shared autonomous execution loop.
+# Shared autonomous execution loop. No approval provider is configured by
+# default, so elevated actions fail closed until the host application supplies
+# an explicit approval boundary.
 autonomy = AutonomyLoop()
