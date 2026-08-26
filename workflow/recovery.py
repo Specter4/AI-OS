@@ -30,6 +30,7 @@ _TRANSIENT_MARKERS = (
 _APPROVAL_MARKERS = (
     "permission denied",
     "requires approval",
+    "explicit approval",
     "approval required",
     "destructive",
     "not approved",
