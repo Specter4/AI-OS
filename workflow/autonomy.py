@@ -1,8 +1,8 @@
 """Observe/action/replan loop for autonomous AI-OS execution.
 
 The loop is policy-first: the LLM can select a registered tool, but it cannot
-approve permissions. Elevated actions can pause for an application-supplied
-approval provider, while failures remain bounded by the recovery policy.
+approve permissions. Elevated actions pause into an explicit approval queue.
+The returned result can then be resumed with the same task and observations.
 """
 
 from __future__ import annotations
@@ -14,8 +14,9 @@ from typing import Any, Callable
 
 from agents.tool_agent import ApprovalProvider, ToolAgent, tool_agent
 from core.logger import log
-from core.tool_registry import Permission
+from core.tool_registry import Permission, ToolSpec
 from services.llm import llm
+from workflow.approval import ApprovalRequest, approval_controller
 from workflow.recovery import RecoveryDecision, classify_failure
 
 
@@ -37,6 +38,8 @@ class AutonomyResult:
     goal: str
     observations: list[Observation] = field(default_factory=list)
     error: str | None = None
+    approval_request: ApprovalRequest | None = None
+    suspended_task: str | None = None
 
 
 class AutonomyLoop:
@@ -114,26 +117,44 @@ class AutonomyLoop:
     def _recovery(error: str | None) -> RecoveryDecision:
         return classify_failure(error)
 
-    def _run_task(self, task: str, approved_permissions: set[Permission] | None) -> Any:
+    def _approval_callback(self, goal: str, task: str) -> ApprovalProvider:
+        def request(spec: ToolSpec, arguments: dict[str, Any]) -> bool:
+            self._last_approval_request = approval_controller.create(
+                spec, arguments, goal=goal, task=task
+            )
+            return False
+        return request
+
+    def _run_task(
+        self,
+        task: str,
+        approved_permissions: set[Permission] | None,
+        *,
+        goal: str,
+    ) -> Any:
         """Invoke agents with approval support while preserving older adapters."""
         kwargs: dict[str, Any] = {"approved_permissions": approved_permissions}
-        if self.approval_provider is not None:
-            try:
-                if "approval_provider" in inspect.signature(self.agent.run_task).parameters:
-                    kwargs["approval_provider"] = self.approval_provider
-            except (TypeError, ValueError):
-                kwargs["approval_provider"] = self.approval_provider
+        provider = self.approval_provider or self._approval_callback(goal, task)
+        try:
+            if "approval_provider" in inspect.signature(self.agent.run_task).parameters:
+                kwargs["approval_provider"] = provider
+        except (TypeError, ValueError):
+            kwargs["approval_provider"] = provider
         return self.agent.run_task(task, **kwargs)
 
-    def run(self, goal: str, *, approved_permissions: set[Permission] | None = None) -> AutonomyResult:
-        """Run observe/action/replan with bounded recovery and approval gates."""
-        observations: list[Observation] = []
-        next_task = goal
-
-        for step in range(1, self.max_steps + 1):
+    def _run_loop(
+        self,
+        goal: str,
+        next_task: str,
+        observations: list[Observation],
+        *,
+        approved_permissions: set[Permission] | None = None,
+    ) -> AutonomyResult:
+        for step in range(len(observations) + 1, self.max_steps + 1):
+            self._last_approval_request = None
             log(f"Autonomy step {step}: {next_task}")
             try:
-                action = self._run_task(next_task, approved_permissions)
+                action = self._run_task(next_task, approved_permissions, goal=goal)
             except Exception as exc:
                 action = {"success": False, "tool": None, "error": str(exc)}
 
@@ -151,8 +172,12 @@ class AutonomyLoop:
                 log(f"Autonomy recovery decision: {recovery.action} — {recovery.reason}")
                 if recovery.requires_approval:
                     return AutonomyResult(
-                        False, goal, observations,
+                        False,
+                        goal,
+                        observations,
                         "Explicit approval is required before this action can continue.",
+                        approval_request=getattr(self, "_last_approval_request", None),
+                        suspended_task=next_task,
                     )
                 if recovery.retry:
                     continue
@@ -170,8 +195,27 @@ class AutonomyLoop:
             f"Autonomy step limit ({self.max_steps}) reached before completion.",
         )
 
+    def run(self, goal: str, *, approved_permissions: set[Permission] | None = None) -> AutonomyResult:
+        """Run observe/action/replan with bounded recovery and approval gates."""
+        return self._run_loop(goal, goal, [], approved_permissions=approved_permissions)
 
-# Shared autonomous execution loop. No approval provider is configured by
-# default, so elevated actions fail closed until the host application supplies
-# an explicit approval boundary.
+    def resume(self, result: AutonomyResult, approval_request_id: str) -> AutonomyResult:
+        """Resume a paused run after an approval request has been approved."""
+        if result.success:
+            raise ValueError("Cannot resume a completed autonomous run")
+        request = approval_controller.get(approval_request_id)
+        if request.status != "approved":
+            raise PermissionError(f"Approval request is not approved: {approval_request_id}")
+        if result.approval_request is None or result.approval_request.id != approval_request_id:
+            raise ValueError("Approval request does not belong to this autonomous run")
+        return self._run_loop(
+            result.goal,
+            result.suspended_task or request.task or request.tool,
+            list(result.observations),
+            approved_permissions={request.permission},
+        )
+
+
+# Shared autonomous execution loop. Elevated actions fail closed until the
+# host application explicitly approves the generated request.
 autonomy = AutonomyLoop()
