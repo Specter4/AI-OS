@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from core.logger import log
-from core.tool_registry import Permission, ToolSpec, registry
+from core.tool_registry import Permission, ToolSpec, ToolRegistry, registry
 from services.llm import llm
 
 
@@ -31,11 +31,18 @@ ApprovalProvider = Callable[[ToolSpec, dict[str, Any]], bool]
 class ToolAgent:
     """Execution gateway used by agents that need registered tools."""
 
-    def __init__(self, approval_provider: ApprovalProvider | None = None):
+    def __init__(
+        self,
+        approval_provider: ApprovalProvider | None = None,
+        registry: ToolRegistry | None = None,
+    ):
         self.approval_provider = approval_provider
+        # Dependency injection keeps tests and isolated interaction sessions
+        # independent from the process-wide registry.
+        self.registry = registry or globals()["registry"]
 
     def available_tools(self) -> list[dict[str, str]]:
-        return registry.describe()
+        return self.registry.describe()
 
     def select_tool(self, task: str) -> ToolRequest | None:
         """Ask the LLM to select one registered tool for *task*."""
@@ -72,7 +79,7 @@ class ToolAgent:
             raise ValueError("Tool selector returned an invalid tool name")
         if not isinstance(arguments, dict):
             raise ValueError("Tool selector arguments must be a JSON object")
-        registry.get(tool_name)
+        self.registry.get(tool_name)
         return ToolRequest(tool=tool_name, arguments=arguments)
 
     def _ensure_approved(
@@ -111,9 +118,9 @@ class ToolAgent:
         **kwargs,
     ):
         log(f"ToolAgent invoking: {tool_name}")
-        spec = registry.get(tool_name)
+        spec = self.registry.get(tool_name)
         approved = self._ensure_approved(spec, kwargs, approved_permissions, approval_provider)
-        return registry.invoke(tool_name, *args, approved_permissions=approved, **kwargs)
+        return self.registry.invoke(tool_name, *args, approved_permissions=approved, **kwargs)
 
     def run_task(
         self,
