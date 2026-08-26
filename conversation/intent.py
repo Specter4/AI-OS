@@ -4,7 +4,8 @@ from __future__ import annotations
 
 
 # Explicit command prefixes remain deterministic and take priority over the
-# broader natural-language goal classifier.
+# broader natural-language goal classifier. A multi-step research request is
+# handled specially below so it can enter the autonomous planner.
 _COMMANDS = (
     ("remember ", "memory_store"),
     ("recall ", "memory_recall"),
@@ -23,6 +24,15 @@ _GOAL_VERBS = {
     "update", "research", "look for", "look up",
 }
 
+# Words that strongly indicate that a request contains multiple stages rather
+# than being a single research lookup. This keeps simple ``research ...``
+# requests compatible with the existing research-agent path.
+_MULTI_STEP_CUES = {
+    "compare", "recommend", "then", "after", "followed by", "and compare",
+    "and recommend", "and analyze", "and rank", "and summarize",
+}
+
+
 # Questions that contain an action verb but are asking for an explanation are
 # still ordinary conversation.
 _EXPLANATION_PREFIXES = (
@@ -39,6 +49,11 @@ def _contains_goal_verb(text: str) -> bool:
     )
 
 
+def _is_multi_step_goal(text: str) -> bool:
+    """Return whether the request clearly describes multiple stages."""
+    return any(cue in text for cue in _MULTI_STEP_CUES)
+
+
 def detect_intent(message: str) -> dict[str, str]:
     """Classify a message into a small, deterministic AI-OS intent set.
 
@@ -47,6 +62,15 @@ def detect_intent(message: str) -> dict[str, str]:
     reliable and must not fail merely because an LLM provider is unavailable.
     """
     text = message.lower().strip()
+
+    # ``research`` remains a deterministic shortcut for simple research
+    # requests. When the same request explicitly asks AI-OS to compare,
+    # recommend, rank, or perform another second stage, it is a genuine
+    # autonomous goal and should enter the planner/executor pipeline.
+    if text.startswith("research "):
+        if _is_multi_step_goal(text):
+            return {"intent": "autonomous_goal", "content": message}
+        return {"intent": "research", "content": message[len("research "):]} 
 
     for prefix, intent in _COMMANDS:
         if text.startswith(prefix):
