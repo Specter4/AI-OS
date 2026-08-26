@@ -62,15 +62,10 @@ class AutonomyLoop:
         return self.context_provider()
 
     def evaluate(self, goal: str, observations: list[Observation], context: Any = None) -> dict[str, Any]:
-        """Ask the LLM whether the goal is complete using full project state."""
         history = [
             {
-                "step": item.step,
-                "task": item.task,
-                "tool": item.tool,
-                "success": item.success,
-                "result": item.result,
-                "error": item.error,
+                "step": item.step, "task": item.task, "tool": item.tool,
+                "success": item.success, "result": item.result, "error": item.error,
                 "recovery_action": item.recovery_action,
                 "recovery_reason": item.recovery_reason,
             }
@@ -119,6 +114,17 @@ class AutonomyLoop:
     def _recovery(error: str | None) -> RecoveryDecision:
         return classify_failure(error)
 
+    def _run_task(self, task: str, approved_permissions: set[Permission] | None) -> Any:
+        """Invoke agents with approval support while preserving older adapters."""
+        kwargs: dict[str, Any] = {"approved_permissions": approved_permissions}
+        if self.approval_provider is not None:
+            try:
+                if "approval_provider" in inspect.signature(self.agent.run_task).parameters:
+                    kwargs["approval_provider"] = self.approval_provider
+            except (TypeError, ValueError):
+                kwargs["approval_provider"] = self.approval_provider
+        return self.agent.run_task(task, **kwargs)
+
     def run(self, goal: str, *, approved_permissions: set[Permission] | None = None) -> AutonomyResult:
         """Run observe/action/replan with bounded recovery and approval gates."""
         observations: list[Observation] = []
@@ -127,23 +133,15 @@ class AutonomyLoop:
         for step in range(1, self.max_steps + 1):
             log(f"Autonomy step {step}: {next_task}")
             try:
-                action = self.agent.run_task(
-                    next_task,
-                    approved_permissions=approved_permissions,
-                    approval_provider=self.approval_provider,
-                )
+                action = self._run_task(next_task, approved_permissions)
             except Exception as exc:
                 action = {"success": False, "tool": None, "error": str(exc)}
 
             success = bool(action.get("success"))
             recovery = None if success else self._recovery(action.get("error"))
             observation = Observation(
-                step=step,
-                task=next_task,
-                tool=action.get("tool"),
-                success=success,
-                result=action.get("result"),
-                error=action.get("error"),
+                step=step, task=next_task, tool=action.get("tool"), success=success,
+                result=action.get("result"), error=action.get("error"),
                 recovery_action=recovery.action if recovery else None,
                 recovery_reason=recovery.reason if recovery else None,
             )
@@ -153,9 +151,7 @@ class AutonomyLoop:
                 log(f"Autonomy recovery decision: {recovery.action} — {recovery.reason}")
                 if recovery.requires_approval:
                     return AutonomyResult(
-                        False,
-                        goal,
-                        observations,
+                        False, goal, observations,
                         "Explicit approval is required before this action can continue.",
                     )
                 if recovery.retry:
@@ -170,9 +166,7 @@ class AutonomyLoop:
             next_task = decision["next_task"]
 
         return AutonomyResult(
-            False,
-            goal,
-            observations,
+            False, goal, observations,
             f"Autonomy step limit ({self.max_steps}) reached before completion.",
         )
 
