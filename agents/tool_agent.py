@@ -1,22 +1,19 @@
-"""Tool-aware agent execution.
+"""Tool-aware agent execution with explicit safety gates.
 
-Provides a small, controlled loop for agents that need registered tools:
-1. discover available tools
-2. ask the LLM to select one
-3. validate the requested tool and arguments
-4. invoke it through the permission-aware registry
-
-The LLM never receives direct access to Python callables.
+The LLM can select a registered tool, but it cannot grant itself permissions.
+External and destructive actions require an explicit approval callback before
+execution. The approval decision is made outside the LLM and is therefore
+safe to replace with a UI, Discord prompt, CLI prompt, or future API.
 """
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from core.logger import log
-from core.tool_registry import Permission, registry
+from core.tool_registry import Permission, ToolSpec, registry
 from services.llm import llm
 
 
@@ -28,18 +25,20 @@ class ToolRequest:
     arguments: dict[str, Any]
 
 
+ApprovalProvider = Callable[[ToolSpec, dict[str, Any]], bool]
+
+
 class ToolAgent:
     """Execution gateway used by agents that need registered tools."""
+
+    def __init__(self, approval_provider: ApprovalProvider | None = None):
+        self.approval_provider = approval_provider
 
     def available_tools(self) -> list[dict[str, str]]:
         return registry.describe()
 
     def select_tool(self, task: str) -> ToolRequest | None:
-        """Ask the LLM to select one registered tool for *task*.
-
-        Returning ``None`` is a valid outcome when no registered tool is
-        appropriate. The model is constrained to the current registry catalog.
-        """
+        """Ask the LLM to select one registered tool for *task*."""
         tools = self.available_tools()
 
         if not tools:
@@ -85,9 +84,37 @@ class ToolAgent:
         if not isinstance(arguments, dict):
             raise ValueError("Tool selector arguments must be a JSON object")
 
-        # Validate against the registry before execution.
         registry.get(tool_name)
         return ToolRequest(tool=tool_name, arguments=arguments)
+
+    def _ensure_approved(
+        self,
+        spec: ToolSpec,
+        arguments: dict[str, Any],
+        approved_permissions: set[Permission] | None,
+    ) -> set[Permission]:
+        """Return permissions usable for this invocation after safety checks."""
+        approved = set(approved_permissions or {Permission.READ})
+        if spec.permission in approved:
+            return approved
+
+        # No model output can satisfy this gate. Approval must come from the
+        # application/user boundary represented by approval_provider.
+        if self.approval_provider is None:
+            raise PermissionError(
+                f"Tool '{spec.name}' requires explicit approval for "
+                f"'{spec.permission.value}' permission"
+            )
+
+        approved_by_user = bool(self.approval_provider(spec, arguments))
+        if not approved_by_user:
+            raise PermissionError(
+                f"Tool '{spec.name}' requires explicit approval for "
+                f"'{spec.permission.value}' permission"
+            )
+
+        approved.add(spec.permission)
+        return approved
 
     def run(
         self,
@@ -97,10 +124,12 @@ class ToolAgent:
         **kwargs,
     ):
         log(f"ToolAgent invoking: {tool_name}")
+        spec = registry.get(tool_name)
+        approved = self._ensure_approved(spec, kwargs, approved_permissions)
         return registry.invoke(
             tool_name,
             *args,
-            approved_permissions=approved_permissions,
+            approved_permissions=approved,
             **kwargs,
         )
 
@@ -133,5 +162,6 @@ class ToolAgent:
         }
 
 
-# Shared execution gateway for agents.
+# Shared execution gateway for agents. It has no approval provider by default;
+# applications should inject an explicit user-approval boundary when needed.
 tool_agent = ToolAgent()
