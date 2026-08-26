@@ -9,9 +9,35 @@ from agents.memory import remember, recall
 from agents.research import research
 from agents.planner import plan
 from conversation.engine import respond
-
 from workflow.executor import execute
 from core.logger import log
+
+
+def _execute_goal(content: str):
+    """Plan and execute a natural-language goal through the normal pipeline."""
+    log("Autonomous Goal selected")
+    tasks = plan(content)
+    project = execute(tasks, goal=content)
+
+    response = "## 🤖 AI-OS Execution Report\n\n"
+    response += f"**Goal:** {project.goal}\n"
+    response += f"**Status:** {project.status}\n"
+    response += f"**Progress:** {project.progress()}%\n\n"
+
+    for task in project.tasks:
+        response += f"### {task.title}\n"
+        response += f"- Agent: `{task.agent}`\n"
+        response += f"- Status: `{task.status}`\n"
+        if task.result is not None:
+            preview = str(task.result)
+            if len(preview) > 500:
+                preview = preview[:500] + "..."
+            response += f"- Result: {preview}\n"
+        if task.error:
+            response += f"- Error: {task.error}\n"
+        response += "\n"
+
+    return response
 
 
 def handle_request(request):
@@ -25,24 +51,8 @@ def handle_request(request):
         log("Conversation Engine selected")
         return respond(content)
 
-    if intent == "planner":
-        log("Planner Agent selected")
-        tasks = plan(content)
-        project = execute(tasks, goal=content)
-        response = "## 📋 Execution Report\n\n"
-        for task in project.tasks:
-            response += (
-                f"📁 Project: {project.goal}\n"
-                f"Status: {project.status}\n"
-                f"Progress: {project.progress()}%\n\n"
-            )
-            if task.result:
-                preview = str(task.result)
-                if len(preview) > 100:
-                    preview = preview[:100] + "..."
-                response += f"- Result: {preview}\n"
-            response += "\n"
-        return response
+    if intent in {"planner", "autonomous_goal"}:
+        return _execute_goal(content)
 
     if intent == "memory_store":
         try:
