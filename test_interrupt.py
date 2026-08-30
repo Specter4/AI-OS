@@ -49,16 +49,16 @@ def test_interrupted_run_can_resume_with_new_instruction():
     loop = AutonomyLoop(agent=agent, max_steps=1, interrupt_controller=controller)
 
     interrupted = loop.run("Research laptops")
+    loop.evaluate = lambda goal, observations, context=None: {"complete": True, "next_task": None}
     resumed = loop.resume_with_instruction(interrupted, "Research Lenovo laptops only")
 
-    assert resumed.success is False or resumed.success is True
+    assert resumed.success is True
+    assert resumed.observations[-1].task == "Research Lenovo laptops only"
     assert agent.tasks == ["Research Lenovo laptops only"]
 
 
 def test_interrupt_can_be_requested_from_another_thread():
     controller = InterruptController()
-    loop = AutonomyLoop(agent=FakeAgent(), max_steps=1, interrupt_controller=controller)
-
     thread = threading.Thread(target=controller.request, kwargs={"reason": "Stop now"})
     thread.start()
     thread.join()
