@@ -7,6 +7,7 @@ from threading import RLock
 from typing import Any
 
 from conversation.context import ConversationContext
+from conversation.control import ControlIntent, interpret_control
 from workflow.autonomy import AutonomyLoop, AutonomyResult
 from workflow.interrupt import InterruptController, Interruption
 
@@ -34,6 +35,21 @@ class SessionState:
                 context_provider=self.conversation.prompt_context,
                 interrupt_controller=self.interrupt_controller,
             )
+
+    def interpret(self, message: str) -> ControlIntent:
+        """Interpret a message against the session's live task state."""
+        with self._lock:
+            active = self.active_goal is not None
+        return interpret_control(message, active=active)
+
+    def handle_control(self, message: str) -> ControlIntent:
+        """Translate natural control language into an interrupt/resume request."""
+        intent = self.interpret(message)
+        if intent.action == "interrupt":
+            self.interrupt(reason=message.strip(), instruction=intent.instruction)
+        elif intent.action == "replace":
+            self.interrupt(reason=message.strip(), instruction=intent.instruction)
+        return intent
 
     def interrupt(self, reason: str = "Interrupted by the user.", instruction: str | None = None) -> Interruption:
         return self.interrupt_controller.request(reason, instruction)
