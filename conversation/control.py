@@ -16,24 +16,27 @@ _RESUME = ("continue", "resume", "carry on", "keep going", "go on")
 _REPLACE = ("actually", "instead", "change that", "change it", "do it this way")
 
 
+def _starts_with_control(text: str, phrase: str) -> bool:
+    """Match control phrases even when natural punctuation follows them."""
+    return text == phrase or text.startswith(phrase + " ") or text.startswith(phrase + ",") or text.startswith(phrase + ".") or text.startswith(phrase + "!")
+
+
 def interpret_control(message: str, *, active: bool = False) -> ControlIntent:
     """Interpret human-style interruption/follow-up language deterministically."""
-    text = " ".join(message.lower().strip().split())
+    original = message.strip()
+    text = " ".join(original.lower().split())
     if not active:
         return ControlIntent("none")
 
-    if any(text == phrase or text.startswith(phrase + " ") for phrase in _STOP):
-        return ControlIntent("interrupt", message)
+    if any(_starts_with_control(text, phrase) for phrase in _STOP):
+        return ControlIntent("interrupt", original)
 
-    if any(text == phrase or text.startswith(phrase + " ") for phrase in _RESUME):
-        remainder = text
-        for phrase in _RESUME:
-            if remainder == phrase:
-                return ControlIntent("resume")
-            if remainder.startswith(phrase + " "):
-                return ControlIntent("resume", message[len(phrase):].strip())
+    for phrase in _RESUME:
+        if _starts_with_control(text, phrase):
+            remainder = original[len(phrase):].lstrip(" ,.!?:;")
+            return ControlIntent("resume", remainder or None)
 
     if any(phrase in text for phrase in _REPLACE):
-        return ControlIntent("replace", message)
+        return ControlIntent("replace", original)
 
     return ControlIntent("none")
