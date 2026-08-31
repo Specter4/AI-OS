@@ -26,42 +26,36 @@ class GoalPlan:
 class GoalPlanner:
     """Turn a natural request into an explicit, inspectable task plan."""
 
-    _SEPARATORS = re.compile(
-        r"\s*(?:"
-        r",\s*(?=(?:and|then|also)\b)"
-        r"|\bthen\b"
-        r"|\balso\b"
-        r"|\band\s+(?=(?:compare|research|find|check|draft|write|send|build|recommend|summarize|analyze|deploy)\b)"
-        r")\s*",
-        re.I,
-    )
+    _ACTION_VERBS = r"compare|research|find|check|draft|write|send|build|recommend|summarize|analyze|deploy"
 
     def plan(self, goal: str) -> GoalPlan:
         if not goal or not goal.strip():
             raise ValueError("goal cannot be empty")
 
         clean = " ".join(goal.split())
-        parts = [part.strip(" ,.") for part in self._SEPARATORS.split(clean) if part.strip(" ,.")]
-
-        expanded: list[str] = []
-        for part in parts:
-            fragments = re.split(
-                r"\s*,?\s+and\s+(?=(?:compare|research|find|check|draft|write|send|build|recommend|summarize|analyze|deploy)\b)",
-                part,
-                flags=re.I,
-            )
-            expanded.extend(fragment.strip(" ,.") for fragment in fragments if fragment.strip(" ,."))
-        parts = expanded or [clean]
+        parts = self._split_tasks(clean)
 
         tasks = tuple(
             PlannedTask(
                 task_id=index,
-                description=part,
+                description=part.strip(" ,."),
                 depends_on=((index - 1,) if index > 1 else ()),
             )
             for index, part in enumerate(parts, start=1)
+            if part.strip(" ,.")
         )
         return GoalPlan(goal=clean, tasks=tasks)
+
+    def _split_tasks(self, text: str) -> list[str]:
+        """Split only at natural action boundaries, while retaining task text."""
+        boundary = re.compile(
+            rf"(?:,\s*)?\b(?:then|also)\b\s+|"
+            rf",\s*and\s+(?=(?:{self._ACTION_VERBS})\b)|"
+            rf"\s+and\s+(?=(?:{self._ACTION_VERBS})\b)",
+            re.I,
+        )
+        parts = boundary.split(text)
+        return [part for part in parts if part.strip(" ,.")]
 
 
 planner = GoalPlanner()
