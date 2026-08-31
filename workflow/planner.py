@@ -24,14 +24,17 @@ class GoalPlan:
 
 
 class GoalPlanner:
-    """Turn a natural request into an explicit, inspectable task plan.
+    """Turn a natural request into an explicit, inspectable task plan."""
 
-    This first planning layer is intentionally deterministic. LLM-based
-    decomposition can later replace the splitter while preserving this plan
-    contract for orchestration, interruption, recovery, and UI layers.
-    """
-
-    _SEPARATORS = re.compile(r"\s*(?:,\s*(?=(?:and|then|also)\b)|\bthen\b|\balso\b|\band\s+(?=(?:compare|research|find|check|draft|write|send|build|recommend|summarize|analyze|deploy)\b))\s*", re.I)
+    _SEPARATORS = re.compile(
+        r"\s*(?:"
+        r",\s*(?=(?:and|then|also)\b)"
+        r"|\bthen\b"
+        r"|\balso\b"
+        r"|\band\s+(?=(?:compare|research|find|check|draft|write|send|build|recommend|summarize|analyze|deploy)\b)"
+        r")\s*",
+        re.I,
+    )
 
     def plan(self, goal: str) -> GoalPlan:
         if not goal or not goal.strip():
@@ -40,12 +43,22 @@ class GoalPlanner:
         clean = " ".join(goal.split())
         parts = [part.strip(" ,.") for part in self._SEPARATORS.split(clean) if part.strip(" ,.")]
 
-        # Preserve the complete request when no reliable task boundary exists.
-        if not parts:
-            parts = [clean]
+        expanded: list[str] = []
+        for part in parts:
+            fragments = re.split(
+                r"\s*,?\s+and\s+(?=(?:compare|research|find|check|draft|write|send|build|recommend|summarize|analyze|deploy)\b)",
+                part,
+                flags=re.I,
+            )
+            expanded.extend(fragment.strip(" ,.") for fragment in fragments if fragment.strip(" ,."))
+        parts = expanded or [clean]
 
         tasks = tuple(
-            PlannedTask(task_id=index, description=part, depends_on=((index - 1,) if index > 1 else ()))
+            PlannedTask(
+                task_id=index,
+                description=part,
+                depends_on=((index - 1,) if index > 1 else ()),
+            )
             for index, part in enumerate(parts, start=1)
         )
         return GoalPlan(goal=clean, tasks=tasks)
