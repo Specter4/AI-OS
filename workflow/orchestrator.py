@@ -26,13 +26,14 @@ class TaskOrchestrator:
         return self.tasks_from_plan(plan)
 
     def tasks_from_plan(self, plan: GoalPlan) -> list[Task]:
+        normalized_goal = plan.goal.rstrip(".!? ")
         return [
             Task(
                 id=item.task_id,
                 title=item.description,
                 agent=self._agent_for(item.description),
                 depends_on=list(item.depends_on),
-                metadata={"goal": plan.goal, "planned": True},
+                metadata={"goal": normalized_goal, "planned": True},
             )
             for item in plan.tasks
         ]
