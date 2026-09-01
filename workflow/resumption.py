@@ -26,7 +26,10 @@ class TaskSession:
 
     def handle_message(self, message: str) -> ResumeDecision:
         snapshot = self.state.snapshot()
-        intent: ControlIntent = interpret_control(message, active=snapshot.current_task_id is not None)
+        # An interrupted session is still an active conversational task even
+        # though the live task itself is temporarily cancelled.
+        active = snapshot.current_task_id is not None or self._interrupted_task_id is not None
+        intent: ControlIntent = interpret_control(message, active=active)
 
         if intent.action == "interrupt":
             self._interrupted_task_id = snapshot.current_task_id
@@ -47,10 +50,11 @@ class TaskSession:
                     self.state.start(task_id)
                 except ValueError:
                     pass
+                self._interrupted_task_id = None
             return ResumeDecision("resume", intent.instruction, task_id)
 
         if intent.action == "replace":
-            return ResumeDecision("replace", intent.instruction, snapshot.current_task_id)
+            return ResumeDecision("replace", intent.instruction, snapshot.current_task_id or self._interrupted_task_id)
 
         return ResumeDecision("none")
 
