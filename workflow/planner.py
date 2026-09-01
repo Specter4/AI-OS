@@ -47,15 +47,14 @@ class GoalPlanner:
         return GoalPlan(goal=clean, tasks=tasks)
 
     def _split_tasks(self, text: str) -> list[str]:
-        """Split only at natural action boundaries, while retaining task text."""
+        """Split at explicit natural-language action boundaries without losing text."""
         boundary = re.compile(
-            rf"(?:,\s*)?\b(?:then|also)\b\s+|"
-            rf",\s*and\s+(?=(?:{self._ACTION_VERBS})\b)|"
-            rf"\s+and\s+(?=(?:{self._ACTION_VERBS})\b)",
+            rf",\s+and\s+(?=(?:{self._ACTION_VERBS})\b)|"
+            rf"\s+and\s+(?=(?:{self._ACTION_VERBS})\b)|"
+            rf"\s+(?:then|also)\s+",
             re.I,
         )
-        parts = boundary.split(text)
-        return [part for part in parts if part.strip(" ,.")]
+        return [part for part in boundary.split(text) if part.strip(" ,.")]
 
 
 planner = GoalPlanner()
