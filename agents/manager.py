@@ -5,36 +5,43 @@ Receives structured requests from the Conversation Engine
 and delegates them to the appropriate agent.
 """
 
+import hashlib
+
 from agents.memory import remember, recall
 from agents.research import research
-from agents.planner import plan
 from conversation.engine import respond
-from workflow.executor import execute
 from core.logger import log
+from workflow.mission import mission
+
+
+def _mission_id(goal: str) -> str:
+    """Create a stable local identifier for a natural-language mission."""
+    digest = hashlib.sha256(goal.strip().lower().encode("utf-8")).hexdigest()[:16]
+    return f"mission-{digest}"
 
 
 def _execute_goal(content: str):
-    """Plan and execute a natural-language goal through the normal pipeline."""
+    """Run a natural-language objective through the durable mission pipeline."""
     log("Autonomous Goal selected")
-    tasks = plan(content)
-    project = execute(tasks, goal=content)
+    mission_id = _mission_id(content)
+    project = mission.start(mission_id, content)
+    report = mission.report(mission_id)
 
     response = "## 🤖 AI-OS Execution Report\n\n"
-    response += f"**Goal:** {project.goal}\n"
-    response += f"**Status:** {project.status}\n"
-    response += f"**Progress:** {project.progress()}%\n\n"
+    response += f"**Mission:** `{mission_id}`\n"
+    response += f"**Goal:** {report.goal}\n"
+    response += f"**Status:** {report.status}\n"
+    response += f"**Progress:** {report.progress}%\n\n"
 
-    for task in project.tasks:
-        response += f"### {task.title}\n"
-        response += f"- Agent: `{task.agent}`\n"
-        response += f"- Status: `{task.status}`\n"
-        if task.result is not None:
-            preview = str(task.result)
+    for task in report.tasks:
+        response += f"### {task['title']}\n"
+        response += f"- Agent: `{task['agent']}`\n"
+        response += f"- Status: `{task['status']}`\n"
+        if task["result"] is not None:
+            preview = str(task["result"])
             if len(preview) > 500:
                 preview = preview[:500] + "..."
             response += f"- Result: {preview}\n"
-        if task.error:
-            response += f"- Error: {task.error}\n"
         response += "\n"
 
     return response
