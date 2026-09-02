@@ -1,8 +1,8 @@
 """Human approval controller for autonomous AI-OS execution.
 
 Approval decisions live outside the LLM. The controller creates explicit,
-inspectable requests and supports approve/deny operations that a CLI, Discord
-bot, API, or UI can expose later.
+inspectable requests and supports approve/deny/cancel operations that a CLI,
+Discord bot, API, or UI can expose later.
 """
 
 from __future__ import annotations
@@ -71,6 +71,9 @@ class ApprovalController:
 
     def deny(self, request_id: str) -> ApprovalRequest:
         return self._resolve(request_id, "denied")
+
+    def cancel(self, request_id: str) -> ApprovalRequest:
+        return self._resolve(request_id, "cancelled")
 
     def _resolve(self, request_id: str, status: str) -> ApprovalRequest:
         with self._lock:
