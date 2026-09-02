@@ -22,12 +22,15 @@ class ComputerController:
             raise PermissionError("Path is outside the configured workspace")
         return candidate
 
+    def _relative_path(self, path: Path) -> str:
+        return path.relative_to(self.workspace).as_posix()
+
     def list_directory(self, path: str = ".") -> list[dict[str, Any]]:
         directory = self._safe_path(path)
         if not directory.is_dir():
             raise NotADirectoryError(str(directory))
         return [
-            {"name": item.name, "path": str(item.relative_to(self.workspace)), "is_dir": item.is_dir()}
+            {"name": item.name, "path": self._relative_path(item), "is_dir": item.is_dir()}
             for item in sorted(directory.iterdir(), key=lambda item: item.name.lower())
         ]
 
@@ -41,19 +44,19 @@ class ComputerController:
         file_path = self._safe_path(path)
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_text(content, encoding="utf-8")
-        return str(file_path.relative_to(self.workspace))
+        return self._relative_path(file_path)
 
     def create_directory(self, path: str) -> str:
         directory = self._safe_path(path)
         directory.mkdir(parents=True, exist_ok=True)
-        return str(directory.relative_to(self.workspace))
+        return self._relative_path(directory)
 
     def delete_file(self, path: str) -> str:
         file_path = self._safe_path(path)
         if not file_path.is_file():
             raise FileNotFoundError(str(file_path))
         file_path.unlink()
-        return str(file_path.relative_to(self.workspace))
+        return self._relative_path(file_path)
 
 
 def register_computer_actions(registry: ActionRegistry, controller: ComputerController) -> None:
