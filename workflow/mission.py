@@ -46,12 +46,7 @@ class AutonomousMission:
             raise ValueError("goal cannot be empty")
 
         tasks = self.orchestrator.build(goal)
-        return execute(
-            goal,
-            tasks,
-            project_id=mission_id,
-            project_root=self.project_root,
-        )
+        return execute(goal, tasks, project_id=mission_id, project_root=self.project_root)
 
     def resume(self, mission_id: str) -> Project:
         """Resume a previously checkpointed mission."""
@@ -84,7 +79,6 @@ class AutonomousMission:
                     "agent": task.agent,
                     "status": task.status,
                     "result": task.result,
-                    "error": task.error,
                 }
                 for task in project.tasks
             ),
