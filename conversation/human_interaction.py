@@ -51,10 +51,13 @@ def analyze(message: str, *, has_previous_turn: bool = False) -> InteractionSign
         for prefix in _CORRECTION_PREFIXES:
             if lowered.startswith(prefix):
                 correction_text = text[len(prefix):].lstrip(" ,.!?:;") or None
+                if correction_text and correction_text.lower().startswith("actually "):
+                    correction_text = correction_text[len("actually "):].lstrip()
                 break
 
     follow_up = has_previous_turn and (
         bool(_REFERENCE_RE.search(text))
+        or correction
         or any(lowered.startswith(word + " ") or lowered == word for word in _FOLLOW_UP_WORDS)
     )
     urgent = any(word in lowered for word in _URGENT_WORDS)
