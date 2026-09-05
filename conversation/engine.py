@@ -45,7 +45,7 @@ def _interaction_instruction() -> str:
     signals = context.last_signals
     lines = ["ADVANCED HUMAN INTERACTION:"]
     if signals.is_correction:
-        lines.append("- The user is correcting or revising something. The latest instruction supersedes the earlier one.")
+        lines.append("- The user is correcting or revising something. The newest instruction supersedes the earlier instruction; do not defend the earlier interpretation.")
     if signals.is_follow_up:
         lines.append("- This appears to be a follow-up. Use the conversation history and active context to resolve references naturally.")
     if signals.refers_to_previous:
