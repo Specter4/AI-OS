@@ -27,6 +27,7 @@ class SelfCorrectionResult:
     error: str | None = None
     attempts: tuple[CorrectionAttempt, ...] = ()
     correction_action: str | None = None
+    approval_request_id: str | None = None
 
 
 class SelfCorrectionEngine:
@@ -76,13 +77,12 @@ class SelfCorrectionEngine:
                     task=task,
                     approval_request_id=current_approval,
                 )
-                # RecoveryResult is deliberately accepted as execution-like data;
-                # its final output/status are enough to construct a verification request.
                 actual = execution.output
                 execution_success = execution.success
                 execution_status = execution.status
                 execution_error = execution.error
                 execution_action = execution.action
+                execution_approval_id = getattr(execution, "approval_request_id", None)
             else:
                 execution = self.engine.execute(
                     action_name,
@@ -97,12 +97,14 @@ class SelfCorrectionEngine:
                 execution_status = execution.status
                 execution_error = execution.error
                 execution_action = execution.action
+                execution_approval_id = execution.approval_request_id
 
             if execution_status == "awaiting_approval":
                 return SelfCorrectionResult(
                     False, execution_action, execution_status, error=execution_error,
                     attempts=tuple(attempts),
                     correction_action="awaiting_approval",
+                    approval_request_id=execution_approval_id,
                 )
             if not execution_success:
                 verification = VerificationResult(
@@ -167,8 +169,6 @@ class SelfCorrectionEngine:
             correction_note = "Correction strategy supplied revised action arguments."
             attempts.append(CorrectionAttempt(attempt_number, execution, verification, correction_note))
             current_arguments = dict(next_arguments)
-            # Never carry an approval across a materially changed attempt. The
-            # action engine must establish authorization for the new arguments.
             current_approval = None
 
         raise RuntimeError("Self-correction loop terminated unexpectedly")
