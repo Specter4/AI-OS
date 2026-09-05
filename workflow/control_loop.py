@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 
 from agents.memory import MemoryStore, memory_store
 from core.authorization import IdentityLevel
@@ -22,7 +22,7 @@ from workflow.action_registry import ActionRegistry
 from workflow.judgment import JudgmentAction, JudgmentInput, JudgmentPolicy, JudgmentResult, policy
 from workflow.long_running import LongRunningMission, MissionStore
 from workflow.self_correction import SelfCorrectionEngine, SelfCorrectionResult
-from workflow.tool_selection import AutonomousToolExecutor, ToolSelection, ToolSelector
+from workflow.tool_selection import ToolSelection, ToolSelector
 from workflow.verification import VerificationResult, VerificationStatus, Verifier, verifier
 
 
@@ -117,10 +117,7 @@ class JarvisControlLoop:
 
         selection = self.selector.select(goal)
         if selection.selected is None:
-            return ControlLoopResult(
-                goal, ControlLoopState.NO_TOOL, selection=selection,
-                message=selection.rationale,
-            )
+            return ControlLoopResult(goal, ControlLoopState.NO_TOOL, selection=selection, message=selection.rationale)
 
         action_spec = self.actions.require(selection.selected.action)
         permission = request.permission or self._permission_for(action_spec)
@@ -142,38 +139,17 @@ class JarvisControlLoop:
 
         if judgment.action is JudgmentAction.STOP:
             self._checkpoint(request, "stopped", error=judgment.reason)
-            return ControlLoopResult(
-                goal, ControlLoopState.STOPPED, selection, judgment,
-                owner_needs_to_know=judgment.owner_needs_to_know,
-                message=judgment.reason,
-                mission_id=request.mission_id,
-            )
+            return ControlLoopResult(goal, ControlLoopState.STOPPED, selection, judgment, owner_needs_to_know=judgment.owner_needs_to_know, message=judgment.reason, mission_id=request.mission_id)
 
         if judgment.action is JudgmentAction.ASK:
             self._checkpoint(request, "paused", error=judgment.reason)
-            return ControlLoopResult(
-                goal, ControlLoopState.ASKING, selection, judgment,
-                owner_needs_to_know=judgment.owner_needs_to_know,
-                message=judgment.reason,
-                mission_id=request.mission_id,
-            )
+            return ControlLoopResult(goal, ControlLoopState.ASKING, selection, judgment, owner_needs_to_know=judgment.owner_needs_to_know, message=judgment.reason, mission_id=request.mission_id)
 
         if self._interrupted():
             self._checkpoint(request, "paused", error="Execution paused by interruption.")
-            return ControlLoopResult(
-                goal, ControlLoopState.PAUSED, selection, judgment,
-                owner_needs_to_know=judgment.owner_needs_to_know,
-                message="Execution paused by interruption.",
-                mission_id=request.mission_id,
-            )
+            return ControlLoopResult(goal, ControlLoopState.PAUSED, selection, judgment, owner_needs_to_know=judgment.owner_needs_to_know, message="Execution paused by interruption.", mission_id=request.mission_id)
 
-        executor = SelfCorrectionEngine(
-            self.engine,
-            verifier=self.verifier,
-            correction=request.correction,
-            max_corrections=request.max_corrections,
-        )
-
+        executor = SelfCorrectionEngine(self.engine, verifier=self.verifier, correction=request.correction, max_corrections=request.max_corrections)
         execution = executor.execute(
             selection.selected.action,
             request.arguments,
@@ -198,18 +174,18 @@ class JarvisControlLoop:
                 state = ControlLoopState.FAILED
 
             verification = execution.attempts[-1].verification if execution.attempts else None
-            if state is ControlLoopState.COMPLETED and verification is not None and verification.status is VerificationStatus.SKIPPED:
+            if verification is not None and verification.status is VerificationStatus.SKIPPED:
                 state = ControlLoopState.COMPLETED_UNVERIFIED
 
             memory_written = self._write_memory(request, execution, state)
-            self._checkpoint(
-                request,
-                "completed" if state in {ControlLoopState.COMPLETED, ControlLoopState.COMPLETED_UNVERIFIED} else state.value,
-                result=execution.output,
-                error=execution.error,
-            )
+            self._checkpoint(request, "completed" if state in {ControlLoopState.COMPLETED, ControlLoopState.COMPLETED_UNVERIFIED} else state.value, result=execution.output, error=execution.error)
             return ControlLoopResult(
-                goal, state, selection, judgment, execution, verification,
+                goal,
+                state,
+                selection,
+                judgment,
+                execution,
+                verification,
                 owner_needs_to_know=judgment.owner_needs_to_know or state in {
                     ControlLoopState.AWAITING_APPROVAL,
                     ControlLoopState.INFORMED,
@@ -261,7 +237,6 @@ class JarvisControlLoop:
             else:
                 mission.checkpoint(error=error, result=result)
         except (FileNotFoundError, RuntimeError, ValueError):
-            # Mission persistence must never bypass the action safety path.
             return
 
     def _write_memory(self, request: ControlLoopInput, execution: SelfCorrectionResult, state: ControlLoopState) -> tuple[str, ...]:
