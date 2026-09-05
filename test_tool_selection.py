@@ -87,7 +87,7 @@ def test_unknown_speaker_cannot_bypass_selected_write_action():
     actions, capabilities, calls = make_system()
     engine = ActionExecutionEngine(actions)
     result = AutonomousToolExecutor(ToolSelector(actions, capabilities), engine).execute("write file", {"path": "notes.txt", "content": "hello"}, identity=IdentityLevel.UNKNOWN)
-    assert result.execution.status == "awaiting_approval"
+    assert result.execution.status == "denied"
     assert calls == []
 
 
