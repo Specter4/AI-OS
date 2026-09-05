@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from core.project import Project
 from workflow.executor import execute, resume_project
+from workflow.long_running import LongRunningMission, MissionRecord, MissionStore
 from workflow.planner import GoalPlanner, planner as default_planner
 from workflow.orchestrator import TaskOrchestrator
 
@@ -33,10 +34,12 @@ class AutonomousMission:
         orchestrator: TaskOrchestrator | None = None,
         planner: GoalPlanner | None = None,
         project_root: str = "data/projects",
+        mission_root: str = "data/missions",
     ) -> None:
         self.planner = planner or default_planner
         self.orchestrator = orchestrator or TaskOrchestrator(self.planner)
         self.project_root = project_root
+        self.mission_store = MissionStore(mission_root)
 
     def start(self, mission_id: str, goal: str) -> Project:
         """Plan, execute, checkpoint, and return the durable mission project."""
@@ -51,6 +54,14 @@ class AutonomousMission:
     def resume(self, mission_id: str) -> Project:
         """Resume a previously checkpointed mission."""
         return resume_project(mission_id, project_root=self.project_root)
+
+    def long_running(self, mission_id: str, goal: str) -> LongRunningMission:
+        """Create or restore a mission that can run in durable bounded slices."""
+        return LongRunningMission(mission_id, goal, store=self.mission_store)
+
+    def active_missions(self) -> list[MissionRecord]:
+        """List missions that still require attention or execution."""
+        return self.mission_store.list(states={"queued", "running", "paused", "failed"})
 
     def status(self, mission_id: str) -> MissionReport:
         """Return a current, inspectable report without executing work."""
@@ -87,4 +98,4 @@ class AutonomousMission:
 
 mission = AutonomousMission()
 
-__all__ = ["AutonomousMission", "MissionReport", "mission"]
+__all__ = ["AutonomousMission", "MissionReport", "MissionRecord", "LongRunningMission", "MissionStore", "mission"]
