@@ -1,0 +1,4 @@
+# Phase 8 Step 1: local speech-to-text
+faster-whisper>=1.2.1,<2
+sounddevice>=0.5,<1
+numpy>=1.26,<3
