@@ -1,0 +1,2 @@
+# Phase 8 Step 2: local text-to-speech
+pyttsx3>=2.98,<3
