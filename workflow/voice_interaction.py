@@ -1,10 +1,4 @@
-"""Natural voice interaction pipeline for JARVIS.
-
-Combines microphone capture, local speech-to-text, conversational reasoning,
-and text-to-speech behind one interruption-ready interface.  The pipeline is
-provider-neutral at its boundaries so later voice providers can replace the
-local defaults without changing conversation code.
-"""
+"""Natural voice interaction pipeline for JARVIS."""
 
 from __future__ import annotations
 
@@ -19,8 +13,6 @@ from workflow.text_to_speech import SpeechSynthesisResult, TextToSpeechPipeline
 
 @dataclass(frozen=True)
 class VoiceInteractionResult:
-    """Structured result for one complete voice turn."""
-
     success: bool
     transcript: str = ""
     response: str = ""
@@ -35,7 +27,7 @@ class ConversationResponder(Protocol):
 
 
 class VoiceInteractionPipeline:
-    """Run a natural listen -> understand -> respond -> speak voice turn."""
+    """Run one natural listen -> understand -> respond -> speak turn."""
 
     def __init__(
         self,
@@ -54,125 +46,65 @@ class VoiceInteractionPipeline:
         return self._stop_event
 
     def stop(self) -> None:
-        """Stop the current voice turn and any active speech playback."""
         self._stop_event.set()
         self.tts.stop()
 
     def reset(self) -> None:
-        """Clear a previous stop signal before starting a new turn."""
         self._stop_event.clear()
 
-    def process_audio(self, audio: Any, *, language: str | None = None) -> VoiceInteractionResult:
-        """Process an audio path/bytes object into a spoken conversational reply."""
+    def process_audio(self, audio: Any) -> VoiceInteractionResult:
+        """Transcribe audio, generate a conversational response, then speak it."""
         if self._stop_event.is_set():
-            return VoiceInteractionResult(success=False, cancelled=True, error="Voice interaction cancelled")
+            return VoiceInteractionResult(False, cancelled=True, error="Voice interaction cancelled")
+        try:
+            transcription = self.stt.transcribe_audio(audio)
+        except Exception as exc:
+            return VoiceInteractionResult(False, error=str(exc))
+
+        transcript = transcription.text.strip()
+        if not transcript:
+            return VoiceInteractionResult(False, transcription=transcription, error="No speech was detected")
+        if self._stop_event.is_set():
+            return VoiceInteractionResult(False, transcript=transcript, transcription=transcription, cancelled=True, error="Voice interaction cancelled")
 
         try:
-            transcription = self.stt.transcribe(audio, language=language)
+            conversational = self.responder(transcript)
         except Exception as exc:
-            return VoiceInteractionResult(success=False, error=str(exc))
-
-        if not transcription.success or not transcription.text.strip():
-            return VoiceInteractionResult(
-                success=False,
-                transcription=transcription,
-                error=transcription.error or "No speech was detected",
-            )
-
-        if self._stop_event.is_set():
-            return VoiceInteractionResult(
-                success=False,
-                transcript=transcription.text,
-                transcription=transcription,
-                cancelled=True,
-                error="Voice interaction cancelled",
-            )
-
-        try:
-            conversational = self.responder(transcription.text)
-        except Exception as exc:
-            return VoiceInteractionResult(
-                success=False,
-                transcript=transcription.text,
-                transcription=transcription,
-                error=str(exc),
-            )
-
+            return VoiceInteractionResult(False, transcript=transcript, transcription=transcription, error=str(exc))
         if not getattr(conversational, "success", False):
             return VoiceInteractionResult(
-                success=False,
-                transcript=transcription.text,
-                transcription=transcription,
+                False, transcript=transcript, transcription=transcription,
                 error=getattr(conversational, "error", None) or "Conversation response failed",
             )
 
         response_text = str(getattr(conversational, "output", "")).strip()
         if not response_text:
-            return VoiceInteractionResult(
-                success=False,
-                transcript=transcription.text,
-                transcription=transcription,
-                error="Conversation response was empty",
-            )
-
+            return VoiceInteractionResult(False, transcript=transcript, transcription=transcription, error="Conversation response was empty")
         if self._stop_event.is_set():
-            return VoiceInteractionResult(
-                success=False,
-                transcript=transcription.text,
-                response=response_text,
-                transcription=transcription,
-                cancelled=True,
-                error="Voice interaction cancelled",
-            )
+            return VoiceInteractionResult(False, transcript=transcript, response=response_text, transcription=transcription, cancelled=True, error="Voice interaction cancelled")
 
         try:
             speech = self.tts.speak(response_text, stop_event=self._stop_event)
         except Exception as exc:
-            return VoiceInteractionResult(
-                success=False,
-                transcript=transcription.text,
-                response=response_text,
-                transcription=transcription,
-                error=str(exc),
-            )
-
+            return VoiceInteractionResult(False, transcript=transcript, response=response_text, transcription=transcription, error=str(exc))
         if speech.cancelled:
-            return VoiceInteractionResult(
-                success=False,
-                transcript=transcription.text,
-                response=response_text,
-                transcription=transcription,
-                speech=speech,
-                cancelled=True,
-                error=speech.error or "Speech cancelled",
-            )
+            return VoiceInteractionResult(False, transcript=transcript, response=response_text, transcription=transcription, speech=speech, cancelled=True, error=speech.error or "Speech cancelled")
+        return VoiceInteractionResult(True, transcript=transcript, response=response_text, transcription=transcription, speech=speech)
 
-        return VoiceInteractionResult(
-            success=True,
-            transcript=transcription.text,
-            response=response_text,
-            transcription=transcription,
-            speech=speech,
-        )
-
-    def listen_once(
-        self,
-        *,
-        duration: float | None = None,
-        language: str | None = None,
-        recorder: MicrophoneRecorder | None = None,
-    ) -> VoiceInteractionResult:
+    def listen_once(self, duration: float, *, recorder: MicrophoneRecorder | None = None) -> VoiceInteractionResult:
         """Record one microphone turn and process it conversationally."""
+        if duration <= 0:
+            raise ValueError("duration must be positive")
         if self._stop_event.is_set():
-            return VoiceInteractionResult(success=False, cancelled=True, error="Voice interaction cancelled")
+            return VoiceInteractionResult(False, cancelled=True, error="Voice interaction cancelled")
         microphone = recorder or MicrophoneRecorder()
         try:
-            audio = microphone.record(duration=duration, stop_event=self._stop_event)
+            audio = microphone.record(duration, stop_event=self._stop_event)
         except Exception as exc:
-            return VoiceInteractionResult(success=False, error=str(exc))
-        if audio is None:
-            return VoiceInteractionResult(success=False, cancelled=self._stop_event.is_set(), error="No audio was recorded")
-        return self.process_audio(audio, language=language)
+            return VoiceInteractionResult(False, error=str(exc))
+        if self._stop_event.is_set():
+            return VoiceInteractionResult(False, cancelled=True, error="Voice interaction cancelled")
+        return self.process_audio(audio)
 
 
 voice_interaction = VoiceInteractionPipeline()
