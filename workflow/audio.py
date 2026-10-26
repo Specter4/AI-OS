@@ -1,4 +1,4 @@
-"""Compatibility facade for JARVIS audio input, output, interaction, and interruption."""
+"""Compatibility facade for JARVIS audio input, output, interaction, and activation."""
 
 from workflow.speech_to_text import (
     MicrophoneRecorder,
@@ -24,6 +24,7 @@ from workflow.voice_interaction import (
     voice_interaction,
 )
 from workflow.voice_interruption import VoiceInterruptionIntent, interpret_voice_interruption
+from workflow.wake_word import WakeWordDetector, WakeWordEvent, WakeWordListener, WakeWordMatch
 
 __all__ = [
     "ConversationResponder",
@@ -40,6 +41,10 @@ __all__ = [
     "VoiceInteractionPipeline",
     "VoiceInteractionResult",
     "VoiceInterruptionIntent",
+    "WakeWordDetector",
+    "WakeWordEvent",
+    "WakeWordListener",
+    "WakeWordMatch",
     "WhisperTranscriber",
     "interpret_voice_interruption",
     "speech_to_text",
