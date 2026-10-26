@@ -1,4 +1,4 @@
-"""Compatibility facade for JARVIS audio input, output, and interaction."""
+"""Compatibility facade for JARVIS audio input, output, interaction, and interruption."""
 
 from workflow.speech_to_text import (
     MicrophoneRecorder,
@@ -23,6 +23,7 @@ from workflow.voice_interaction import (
     VoiceInteractionResult,
     voice_interaction,
 )
+from workflow.voice_interruption import VoiceInterruptionIntent, interpret_voice_interruption
 
 __all__ = [
     "ConversationResponder",
@@ -38,7 +39,9 @@ __all__ = [
     "TranscriptionResult",
     "VoiceInteractionPipeline",
     "VoiceInteractionResult",
+    "VoiceInterruptionIntent",
     "WhisperTranscriber",
+    "interpret_voice_interruption",
     "speech_to_text",
     "text_to_speech",
     "voice_interaction",
