@@ -1,6 +1,7 @@
 """Built-in tool registrations for AI-OS."""
 
 from core.tool_registry import Permission, registry
+from tools.computer import computer
 from tools.filesystem import filesystem
 
 
@@ -39,6 +40,42 @@ def _register_builtin_tools() -> None:
             "filesystem.create_directory",
             "Create a directory inside the AI-OS workspace.",
             filesystem.create_directory,
+            Permission.WRITE,
+        ),
+        (
+            "desktop.screen_size",
+            "Read the current desktop screen dimensions.",
+            computer.screen_size,
+            Permission.READ,
+        ),
+        (
+            "desktop.click",
+            "Click a validated on-screen coordinate; requires write permission.",
+            computer.click,
+            Permission.WRITE,
+        ),
+        (
+            "desktop.move_mouse",
+            "Move the pointer to a validated on-screen coordinate; requires write permission.",
+            computer.move_mouse,
+            Permission.WRITE,
+        ),
+        (
+            "desktop.type_text",
+            "Type bounded text into the currently focused control; requires write permission.",
+            computer.type_text,
+            Permission.WRITE,
+        ),
+        (
+            "desktop.press_key",
+            "Press one allowlisted key without key-chord execution; requires write permission.",
+            computer.press_key,
+            Permission.WRITE,
+        ),
+        (
+            "desktop.screenshot",
+            "Save a desktop screenshot without overwriting an existing file unless explicitly allowed.",
+            computer.screenshot,
             Permission.WRITE,
         ),
     ]
