@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from conversation.engine import respond
 from workflow.speech_to_text import MicrophoneRecorder, SpeechToTextPipeline, TranscriptionResult
 from workflow.text_to_speech import SpeechSynthesisResult, TextToSpeechPipeline
+from workflow.voice_interruption import VoiceInterruptionIntent, interpret_voice_interruption
 
 
 @dataclass(frozen=True)
@@ -46,11 +47,28 @@ class VoiceInteractionPipeline:
         return self._stop_event
 
     def stop(self) -> None:
+        """Cancel the current voice turn and request immediate TTS stop."""
         self._stop_event.set()
         self.tts.stop()
 
     def reset(self) -> None:
+        """Allow a new turn after an interruption."""
         self._stop_event.clear()
+
+    def handle_interruption_transcript(self, transcript: str) -> VoiceInterruptionIntent:
+        """Handle speech recognized by a concurrent barge-in listener.
+
+        The audio listener can call this while JARVIS is speaking. Stop and
+        replacement requests cancel the current turn; resume clears the stop
+        signal for the next turn. This method does not start microphone
+        monitoring itself.
+        """
+        intent = interpret_voice_interruption(transcript)
+        if intent.action in {"interrupt", "replace"}:
+            self.stop()
+        elif intent.action == "resume":
+            self.reset()
+        return intent
 
     def process_audio(self, audio: Any) -> VoiceInteractionResult:
         """Transcribe audio, generate a conversational response, then speak it."""
