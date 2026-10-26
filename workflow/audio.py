@@ -24,11 +24,21 @@ from workflow.voice_interaction import (
     voice_interaction,
 )
 from workflow.voice_interruption import VoiceInterruptionIntent, interpret_voice_interruption
+from workflow.multimodal import (
+    ImageUnderstandingProvider,
+    MultimodalInput,
+    MultimodalInteractionPipeline,
+    MultimodalInteractionResult,
+)
 from workflow.wake_word import WakeWordDetector, WakeWordEvent, WakeWordListener, WakeWordMatch
 
 __all__ = [
     "ConversationResponder",
     "MicrophoneRecorder",
+    "ImageUnderstandingProvider",
+    "MultimodalInput",
+    "MultimodalInteractionPipeline",
+    "MultimodalInteractionResult",
     "Pyttsx3Synthesizer",
     "SpeechSynthesisResult",
     "SpeechToTextError",
