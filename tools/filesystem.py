@@ -11,6 +11,8 @@ be authorized by the existing permission gateway.
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import fnmatch
 import os
 import shutil
@@ -85,6 +87,52 @@ class FileSystem:
             raise ValueError(f"File exceeds the {max_bytes}-byte read limit")
         log(f"Reading file: {self._relative_label(target)}")
         return target.read_text(encoding=encoding)
+
+    def read_file_base64(self, path: str | Path, max_bytes: int = 10_000_000) -> str:
+        """Read arbitrary binary files as base64 for safe tool/JSON transport."""
+        target = self._resolve(path, must_exist=True)
+        if not target.is_file():
+            raise IsADirectoryError(f"Not a file: {path}")
+        if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes < 1:
+            raise ValueError("max_bytes must be a positive integer")
+        if target.stat().st_size > max_bytes:
+            raise ValueError(f"File exceeds the {max_bytes}-byte read limit")
+        log(f"Reading binary file: {self._relative_label(target)}")
+        return base64.b64encode(target.read_bytes()).decode("ascii")
+
+    def write_file_base64(
+        self,
+        path: str | Path,
+        content_base64: str,
+        overwrite: bool = False,
+    ) -> str:
+        """Write arbitrary binary content supplied as validated base64."""
+        if not isinstance(content_base64, str):
+            raise TypeError("content_base64 must be a string")
+        if not isinstance(overwrite, bool):
+            raise TypeError("overwrite must be a boolean")
+        try:
+            data = base64.b64decode(content_base64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("content_base64 must contain valid base64 data") from exc
+        target = self._resolve(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists() and not overwrite:
+            raise FileExistsError(f"File already exists: {target}")
+        fd, temporary = tempfile.mkstemp(prefix=".aios-write-", dir=str(target.parent))
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+            if target.exists() and not overwrite:
+                raise FileExistsError(f"File already exists: {target}")
+            os.replace(temporary, target)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+        log(f"Wrote binary file: {self._relative_label(target)}")
+        return str(target)
 
     def write_file(
         self,
