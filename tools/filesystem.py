@@ -247,6 +247,8 @@ class FileSystem:
         dst = self._resolve(destination)
         if not src.is_file():
             raise IsADirectoryError(f"Source is not a file: {source}")
+        if src == dst:
+            raise ValueError("Source and destination must be different paths")
         if dst.exists() and not overwrite:
             raise FileExistsError(f"Destination already exists: {dst}")
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -261,6 +263,8 @@ class FileSystem:
         dst = self._resolve(destination)
         if not src.is_file():
             raise IsADirectoryError(f"Source is not a file: {source}")
+        if src == dst:
+            raise ValueError("Source and destination must be different paths")
         if dst.exists() and not overwrite:
             raise FileExistsError(f"Destination already exists: {dst}")
         dst.parent.mkdir(parents=True, exist_ok=True)
