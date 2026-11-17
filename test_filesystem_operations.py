@@ -88,6 +88,11 @@ def test_copy_move_and_rename_preserve_contents_without_overwrite(tmp_path):
     with pytest.raises(FileExistsError):
         fs.rename_file("final.txt", "final.txt")
 
+    with pytest.raises(ValueError, match="different paths"):
+        fs.copy_file("final.txt", "final.txt", overwrite=True)
+    with pytest.raises(ValueError, match="different paths"):
+        fs.move_file("final.txt", "final.txt", overwrite=True)
+
 
 def test_delete_file_and_directory_are_separate_destructive_operations(tmp_path):
     fs = FileSystem(tmp_path)
