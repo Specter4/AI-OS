@@ -159,3 +159,20 @@ def test_symlink_cannot_escape_allowed_roots(tmp_path):
     fs = FileSystem(allowed, allowed_roots=[allowed])
     with pytest.raises(PermissionError):
         fs.list_directory(link)
+
+
+def test_binary_files_round_trip_through_base64(tmp_path):
+    import base64
+
+    fs = FileSystem(tmp_path)
+    payload = bytes([0, 255, 1, 128, 10, 13])
+    encoded = base64.b64encode(payload).decode("ascii")
+
+    fs.write_file_base64("image.bin", encoded)
+    assert fs.read_file_base64("image.bin") == encoded
+    assert (tmp_path / "image.bin").read_bytes() == payload
+
+    with pytest.raises(ValueError, match="valid base64"):
+        fs.write_file_base64("invalid.bin", "not base64!")
+    with pytest.raises(FileExistsError):
+        fs.write_file_base64("image.bin", encoded)
