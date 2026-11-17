@@ -14,10 +14,12 @@ def _register_builtin_tools() -> None:
     builtins = [
         ("system.list_tools", "List capabilities currently available to AI-OS agents.", _list_tools, Permission.READ),
         ("filesystem.read_file", "Read a UTF-8 text file inside configured local access roots.", filesystem.read_file, Permission.READ),
+        ("filesystem.read_file_base64", "Read arbitrary binary file contents as base64 inside configured local access roots.", filesystem.read_file_base64, Permission.READ),
         ("filesystem.list_directory", "List files and directories inside configured local access roots.", filesystem.list_directory, Permission.READ),
         ("filesystem.search_files", "Search for files by filename pattern inside configured local access roots.", filesystem.search_files, Permission.READ),
         ("filesystem.get_file_info", "Read metadata for a file or directory inside configured local access roots.", filesystem.get_file_info, Permission.READ),
         ("filesystem.write_file", "Create a UTF-8 text file; replacing an existing file requires explicit overwrite=true.", filesystem.write_file, Permission.WRITE),
+        ("filesystem.write_file_base64", "Create a binary file from base64 content; replacing an existing file requires explicit overwrite=true.", filesystem.write_file_base64, Permission.WRITE),
         ("filesystem.create_directory", "Create a directory inside configured local access roots.", filesystem.create_directory, Permission.WRITE),
         ("filesystem.copy_file", "Copy a file to another configured local path without overwriting by default.", filesystem.copy_file, Permission.WRITE),
         ("filesystem.move_file", "Move a file to another configured local path without overwriting by default.", filesystem.move_file, Permission.WRITE),
