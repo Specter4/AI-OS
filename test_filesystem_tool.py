@@ -29,7 +29,9 @@ def test_list_directory(tmp_path: Path):
 
 
 def test_workspace_escape_is_blocked(tmp_path: Path):
-    fs = FileSystem(tmp_path)
+    # This test verifies the strict workspace-only policy. Production defaults
+    # additionally allow the signed-in user's home directory.
+    fs = FileSystem(tmp_path, allowed_roots=[tmp_path])
 
     with pytest.raises(PermissionError):
         fs.read_file("../outside.txt")
