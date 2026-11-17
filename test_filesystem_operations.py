@@ -45,14 +45,16 @@ def test_write_refuses_overwrite_unless_explicit(tmp_path):
 
 
 def test_read_size_limit_and_invalid_arguments(tmp_path):
-    fs = FileSystem(tmp_path)
+    # Keep this test workspace-only: the production default intentionally
+    # grants access to the signed-in user's home directory.
+    fs = FileSystem(tmp_path, allowed_roots=[tmp_path])
     fs.write_file("large.txt", "12345")
 
     with pytest.raises(ValueError, match="read limit"):
         fs.read_file("large.txt", max_bytes=4)
     with pytest.raises(ValueError):
         fs.read_file("large.txt", max_bytes=0)
-    with pytest.raises(ValueError):
+    with pytest.raises(PermissionError):
         fs.list_directory("../outside")
 
 
