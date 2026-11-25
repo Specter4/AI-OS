@@ -2,6 +2,7 @@
 
 from core.tool_registry import Permission, registry
 from tools.computer import computer
+from tools.applications import applications
 from tools.filesystem import filesystem
 
 
@@ -32,6 +33,16 @@ def _register_builtin_tools() -> None:
         ("desktop.type_text", "Type bounded text into the currently focused control; requires write permission.", computer.type_text, Permission.WRITE),
         ("desktop.press_key", "Press one allowlisted key without key-chord execution; requires write permission.", computer.press_key, Permission.WRITE),
         ("desktop.screenshot", "Save a desktop screenshot without overwriting an existing file unless explicitly allowed.", computer.screenshot, Permission.WRITE),
+        ("applications.list_installed", "Discover installed applications and Start Menu shortcuts without launching them.", applications.list_installed_applications, Permission.READ),
+        ("applications.list_running", "List running processes with process IDs and available metadata.", applications.list_running_applications, Permission.READ),
+        ("applications.list_windows", "List visible top-level application windows and their handles.", applications.list_application_windows, Permission.READ),
+        ("applications.launch", "Launch an executable or named Start Menu shortcut without a command shell; requires write permission.", applications.launch_application, Permission.WRITE),
+        ("applications.focus_window", "Bring a validated application window to the foreground; requires write permission.", applications.focus_window, Permission.WRITE),
+        ("applications.minimize_window", "Minimize a validated application window; requires write permission.", applications.minimize_window, Permission.WRITE),
+        ("applications.maximize_window", "Maximize a validated application window; requires write permission.", applications.maximize_window, Permission.WRITE),
+        ("applications.restore_window", "Restore a validated application window; requires write permission.", applications.restore_window, Permission.WRITE),
+        ("applications.close_window", "Request graceful window closure with WM_CLOSE; requires destructive permission because unsaved work may be affected.", applications.close_window, Permission.DESTRUCTIVE),
+        ("applications.terminate", "Terminate a process only after its PID and expected process name match; force termination requires destructive permission.", applications.terminate_application, Permission.DESTRUCTIVE),
     ]
 
     existing = {tool.name for tool in registry.list()}
