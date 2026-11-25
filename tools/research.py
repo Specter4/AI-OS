@@ -105,7 +105,7 @@ class _DuckDuckGoParser(HTMLParser):
         self.result_div_depth = 0
         self.capture = None
         self.capture_tag = None
-        if not item or item.get("_skip"):
+        if not item or item.get("_skip") or len(self.results) >= self.max_results:
             return
         title = _clean_text(item.get("title", ""))
         url = item.get("url", "").strip()
