@@ -296,13 +296,24 @@ class WindowsApplicationDriver:
         user32.EnumWindows(callback, 0)
         return results
 
+    @staticmethod
+    def _configure_user32(ctypes, wintypes):
+        user32 = ctypes.windll.user32
+        user32.IsWindow.argtypes = [wintypes.HWND]
+        user32.IsWindow.restype = wintypes.BOOL
+        user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+        user32.ShowWindow.restype = wintypes.BOOL
+        user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+        user32.SetForegroundWindow.restype = wintypes.BOOL
+        user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        user32.PostMessageW.restype = wintypes.BOOL
+        return user32
+
     def _validate_window(self, window_handle: int) -> int:
         if isinstance(window_handle, bool) or not isinstance(window_handle, int) or window_handle <= 0:
             raise ValueError("window_handle must be a positive integer")
         ctypes, wintypes = self._win32()
-        user32 = ctypes.windll.user32
-        user32.IsWindow.argtypes = [wintypes.HWND]
-        user32.IsWindow.restype = wintypes.BOOL
+        user32 = self._configure_user32(ctypes, wintypes)
         if not user32.IsWindow(wintypes.HWND(window_handle)):
             raise ValueError("The window handle is not valid")
         return window_handle
@@ -310,36 +321,37 @@ class WindowsApplicationDriver:
     def focus_window(self, window_handle: int) -> bool:
         hwnd = self._validate_window(window_handle)
         ctypes, wintypes = self._win32()
-        user32 = ctypes.windll.user32
+        user32 = self._configure_user32(ctypes, wintypes)
         user32.ShowWindow(wintypes.HWND(hwnd), 9)  # SW_RESTORE
         return bool(user32.SetForegroundWindow(wintypes.HWND(hwnd)))
 
     def minimize_window(self, window_handle: int) -> bool:
         hwnd = self._validate_window(window_handle)
         ctypes, wintypes = self._win32()
-        user32 = ctypes.windll.user32
+        user32 = self._configure_user32(ctypes, wintypes)
         user32.ShowWindow(wintypes.HWND(hwnd), 6)  # SW_MINIMIZE
         return bool(user32.IsWindow(wintypes.HWND(hwnd)))
 
     def maximize_window(self, window_handle: int) -> bool:
         hwnd = self._validate_window(window_handle)
         ctypes, wintypes = self._win32()
-        user32 = ctypes.windll.user32
+        user32 = self._configure_user32(ctypes, wintypes)
         user32.ShowWindow(wintypes.HWND(hwnd), 3)  # SW_MAXIMIZE
         return bool(user32.IsWindow(wintypes.HWND(hwnd)))
 
     def restore_window(self, window_handle: int) -> bool:
         hwnd = self._validate_window(window_handle)
         ctypes, wintypes = self._win32()
-        user32 = ctypes.windll.user32
+        user32 = self._configure_user32(ctypes, wintypes)
         user32.ShowWindow(wintypes.HWND(hwnd), 9)  # SW_RESTORE
         return bool(user32.IsWindow(wintypes.HWND(hwnd)))
 
     def close_window(self, window_handle: int) -> bool:
         hwnd = self._validate_window(window_handle)
         ctypes, wintypes = self._win32()
+        user32 = self._configure_user32(ctypes, wintypes)
         # Post WM_CLOSE rather than blocking on an unresponsive application.
-        return bool(ctypes.windll.user32.PostMessageW(wintypes.HWND(hwnd), 0x0010, 0, 0))
+        return bool(user32.PostMessageW(wintypes.HWND(hwnd), 0x0010, 0, 0))
 
     def terminate_application(self, pid: int, expected_name: str, force: bool = False) -> dict[str, Any]:
         if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
