@@ -25,6 +25,61 @@ class WindowsApplicationDriver:
         self._user_start_menu = Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs"
         self._common_start_menu = Path(os.environ.get("PROGRAMDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs"
 
+
+    def launch_application(self, application: str, args: list[str], working_directory: str | None = None) -> dict[str, Any]:
+        """Launch an executable or a Start Menu shortcut without a command shell."""
+        requested = Path(application).expanduser()
+        if requested.suffix.casefold() == ".lnk" and requested.is_file():
+            if args:
+                raise ValueError("Arguments are not supported when launching a Windows shortcut")
+            if os.name != "nt":
+                raise RuntimeError("Windows shortcuts can only be launched on Windows")
+            import ctypes
+            result = ctypes.windll.shell32.ShellExecuteW(
+                None, "open", str(requested.resolve()), None, working_directory, 1
+            )
+            if result <= 32:
+                raise OSError(f"Windows could not open shortcut (ShellExecute code {result})")
+            return {"success": True, "application": str(requested.resolve()), "pid": None, "launch_method": "shortcut"}
+
+        resolved = None
+        if requested.exists():
+            if not requested.is_file():
+                raise IsADirectoryError(f"Application path is not a file: {application}")
+            resolved = requested.resolve()
+        else:
+            resolved = shutil.which(application)
+
+        if resolved is None:
+            shortcuts = self.find_start_menu_shortcuts(application)
+            if len(shortcuts) > 1:
+                raise ValueError(f"Application name is ambiguous; use a shortcut path: {shortcuts[:10]}")
+            if len(shortcuts) == 1:
+                return self.launch_application(shortcuts[0], [], working_directory)
+            raise FileNotFoundError(f"Application was not found by path, PATH lookup, or Start Menu name: {application}")
+
+        executable = Path(resolved).resolve()
+        suffix = executable.suffix.casefold()
+        if os.name == "nt":
+            if suffix not in {".exe", ".com"}:
+                raise ValueError("Direct application launch accepts .exe or .com files; use a Start Menu shortcut for other app types")
+        elif not os.access(executable, os.X_OK):
+            raise PermissionError(f"Application is not executable: {executable}")
+
+        process = subprocess.Popen(
+            [str(executable), *args],
+            cwd=working_directory,
+            shell=False,
+            stdin=subprocess.DEVNULL,
+            close_fds=True,
+        )
+        return {
+            "success": True,
+            "application": str(executable),
+            "pid": int(process.pid),
+            "launch_method": "executable",
+        }
+
     def _start_menu_shortcuts(self, limit: int = 1000) -> list[dict[str, Any]]:
         shortcuts: list[dict[str, Any]] = []
         seen: set[str] = set()
