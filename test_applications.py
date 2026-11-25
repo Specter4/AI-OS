@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -191,5 +192,9 @@ def test_executable_launch_rejects_non_executable_file(tmp_path):
     executable.chmod(0o644)
     backend = WindowsApplicationDriver()
 
-    with pytest.raises(PermissionError):
-        backend.launch_application(str(executable), [], None)
+    if os.name == "nt":
+        with pytest.raises(ValueError):
+            backend.launch_application(str(executable), [], None)
+    else:
+        with pytest.raises(PermissionError):
+            backend.launch_application(str(executable), [], None)
