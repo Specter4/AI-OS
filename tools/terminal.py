@@ -115,7 +115,9 @@ class Terminal:
         if len(command) > _MAX_ARGUMENT_CHARS:
             raise ValueError(f"command cannot exceed {_MAX_ARGUMENT_CHARS} characters")
 
-        selected = (shell or ("powershell" if os.name == "nt" else "sh")).strip().lower()
+        if shell is not None and (not isinstance(shell, str) or not shell.strip()):
+            raise ValueError("shell must be a non-empty string when specified")
+        selected = (shell if shell is not None else ("powershell" if os.name == "nt" else "sh")).strip().lower()
         if selected == "powershell":
             executable = shutil.which("pwsh") or shutil.which("powershell")
             if not executable:

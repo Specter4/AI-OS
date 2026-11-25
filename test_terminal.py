@@ -73,6 +73,8 @@ def test_run_shell_rejects_invalid_command(command):
 def test_run_shell_rejects_unknown_or_platform_incompatible_shell():
     with pytest.raises(ValueError):
         Terminal().run_shell("echo ok", shell="fish")
+    with pytest.raises((TypeError, ValueError)):
+        Terminal().run_shell("echo ok", shell=123)
     if os.name != "nt":
         with pytest.raises(ValueError):
             Terminal().run_shell("echo ok", shell="cmd")
