@@ -173,3 +173,29 @@ def test_page_parser_enforces_character_limit():
     _, _, text, truncated = parser.output()
     assert len(text) <= 20
     assert truncated is True
+
+
+
+def test_search_does_not_return_non_http_or_private_result_destinations():
+    def unsafe_result_transport(url, timeout, max_bytes):
+        body = b"""
+        <div class="result"><a class="result__a" href="javascript:alert(1)">Unsafe</a></div>
+        <div class="result"><a class="result__a" href="http://127.0.0.1/private">Private</a></div>
+        <div class="result"><a class="result__a" href="https://example.com/safe">Safe</a></div>
+        """
+        return body, url, "text/html"
+
+    research = WebResearch(resolver=_public_resolver, transport=unsafe_result_transport)
+    result = research.search("test", max_results=5)
+    assert [item["title"] for item in result["results"]] == ["Safe"]
+    assert result["results"][0]["url"] == "https://example.com/safe"
+
+
+def test_web_research_tools_are_registered_as_read_only():
+    import tools.registry  # noqa: F401 - registers built-in tools
+    from core.tool_registry import Permission, registry
+
+    permissions = {tool.name: tool.permission for tool in registry.list()}
+    assert permissions["web.search"] == Permission.READ
+    assert permissions["web.fetch_page"] == Permission.READ
+    assert permissions["web.research"] == Permission.READ

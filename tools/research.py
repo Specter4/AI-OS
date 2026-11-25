@@ -313,7 +313,17 @@ class WebResearch:
             raise WebResearchError("Search provider returned an anti-bot or challenge page")
         parser = _DuckDuckGoParser(max_results)
         parser.feed(html_text)
-        results = parser.results[:max_results]
+        # Do not surface malformed, credential-bearing, or non-public result
+        # destinations even when the search provider returns them.
+        results: list[dict[str, str]] = []
+        for item in parser.results:
+            try:
+                self.validate_public_url(item["url"])
+            except (ValueError, PermissionError, WebResearchError):
+                continue
+            results.append(item)
+            if len(results) >= max_results:
+                break
         return {
             "success": True,
             "query": query,
