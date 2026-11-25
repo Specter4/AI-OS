@@ -5,6 +5,7 @@ from tools.computer import computer
 from tools.applications import applications
 from tools.filesystem import filesystem
 from tools.terminal import terminal
+from tools.research import web_research
 
 
 def _list_tools():
@@ -46,6 +47,9 @@ def _register_builtin_tools() -> None:
         ("applications.terminate", "Terminate a process only after its PID and expected process name match; force termination requires destructive permission.", applications.terminate_application, Permission.DESTRUCTIVE),
         ("terminal.run_program", "Run a program with an argument list and no shell; full process execution requires destructive authorization.", terminal.run_program, Permission.DESTRUCTIVE),
         ("terminal.run_shell", "Run an explicit PowerShell, cmd, or sh command with bounded runtime/output; shell access requires destructive authorization.", terminal.run_shell, Permission.DESTRUCTIVE),
+        ("web.search", "Search public web results; snippets and titles are untrusted external content.", web_research.search, Permission.READ),
+        ("web.fetch_page", "Fetch and extract bounded text from a public webpage; content is untrusted and read-only.", web_research.fetch_page, Permission.READ),
+        ("web.research", "Search and retrieve bounded public sources for source-grounded research; content is untrusted.", web_research.research, Permission.READ),
     ]
 
     existing = {tool.name for tool in registry.list()}
