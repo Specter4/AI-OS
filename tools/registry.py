@@ -4,6 +4,7 @@ from core.tool_registry import Permission, registry
 from tools.computer import computer
 from tools.applications import applications
 from tools.filesystem import filesystem
+from tools.terminal import terminal
 
 
 def _list_tools():
@@ -43,6 +44,8 @@ def _register_builtin_tools() -> None:
         ("applications.restore_window", "Restore a validated application window; requires write permission.", applications.restore_window, Permission.WRITE),
         ("applications.close_window", "Request graceful window closure with WM_CLOSE; requires destructive permission because unsaved work may be affected.", applications.close_window, Permission.DESTRUCTIVE),
         ("applications.terminate", "Terminate a process only after its PID and expected process name match; force termination requires destructive permission.", applications.terminate_application, Permission.DESTRUCTIVE),
+        ("terminal.run_program", "Run a program with an argument list and no shell; full process execution requires destructive authorization.", terminal.run_program, Permission.DESTRUCTIVE),
+        ("terminal.run_shell", "Run an explicit PowerShell, cmd, or sh command with bounded runtime/output; shell access requires destructive authorization.", terminal.run_shell, Permission.DESTRUCTIVE),
     ]
 
     existing = {tool.name for tool in registry.list()}
