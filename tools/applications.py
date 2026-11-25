@@ -264,6 +264,18 @@ class WindowsApplicationDriver:
         results: list[dict[str, Any]] = []
 
         enum_callback = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        user32.EnumWindows.argtypes = [enum_callback, wintypes.LPARAM]
+        user32.EnumWindows.restype = wintypes.BOOL
+        user32.IsWindow.argtypes = [wintypes.HWND]
+        user32.IsWindow.restype = wintypes.BOOL
+        user32.IsWindowVisible.argtypes = [wintypes.HWND]
+        user32.IsWindowVisible.restype = wintypes.BOOL
+        user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+        user32.GetWindowTextLengthW.restype = ctypes.c_int
+        user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+        user32.GetWindowTextW.restype = ctypes.c_int
+        user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+        user32.GetWindowThreadProcessId.restype = wintypes.DWORD
 
         def visit(hwnd, _):
             if not user32.IsWindowVisible(hwnd):
@@ -288,7 +300,10 @@ class WindowsApplicationDriver:
         if isinstance(window_handle, bool) or not isinstance(window_handle, int) or window_handle <= 0:
             raise ValueError("window_handle must be a positive integer")
         ctypes, wintypes = self._win32()
-        if not ctypes.windll.user32.IsWindow(wintypes.HWND(window_handle)):
+        user32 = ctypes.windll.user32
+        user32.IsWindow.argtypes = [wintypes.HWND]
+        user32.IsWindow.restype = wintypes.BOOL
+        if not user32.IsWindow(wintypes.HWND(window_handle)):
             raise ValueError("The window handle is not valid")
         return window_handle
 
@@ -302,17 +317,23 @@ class WindowsApplicationDriver:
     def minimize_window(self, window_handle: int) -> bool:
         hwnd = self._validate_window(window_handle)
         ctypes, wintypes = self._win32()
-        return bool(ctypes.windll.user32.ShowWindow(wintypes.HWND(hwnd), 6))  # SW_MINIMIZE
+        user32 = ctypes.windll.user32
+        user32.ShowWindow(wintypes.HWND(hwnd), 6)  # SW_MINIMIZE
+        return bool(user32.IsWindow(wintypes.HWND(hwnd)))
 
     def maximize_window(self, window_handle: int) -> bool:
         hwnd = self._validate_window(window_handle)
         ctypes, wintypes = self._win32()
-        return bool(ctypes.windll.user32.ShowWindow(wintypes.HWND(hwnd), 3))  # SW_MAXIMIZE
+        user32 = ctypes.windll.user32
+        user32.ShowWindow(wintypes.HWND(hwnd), 3)  # SW_MAXIMIZE
+        return bool(user32.IsWindow(wintypes.HWND(hwnd)))
 
     def restore_window(self, window_handle: int) -> bool:
         hwnd = self._validate_window(window_handle)
         ctypes, wintypes = self._win32()
-        return bool(ctypes.windll.user32.ShowWindow(wintypes.HWND(hwnd), 9))  # SW_RESTORE
+        user32 = ctypes.windll.user32
+        user32.ShowWindow(wintypes.HWND(hwnd), 9)  # SW_RESTORE
+        return bool(user32.IsWindow(wintypes.HWND(hwnd)))
 
     def close_window(self, window_handle: int) -> bool:
         hwnd = self._validate_window(window_handle)
@@ -479,6 +500,10 @@ class Applications:
         return {"success": bool(self.driver.close_window(hwnd)), "window_handle": hwnd, "action": "close"}
 
     def terminate_application(self, pid: int, expected_name: str, force: bool = False) -> dict[str, Any]:
+        if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+            raise ValueError("pid must be a positive integer")
+        if not isinstance(expected_name, str) or not expected_name.strip():
+            raise ValueError("expected_name is required to guard against terminating the wrong process")
         if not isinstance(force, bool):
             raise TypeError("force must be a boolean")
         return self.driver.terminate_application(pid, expected_name, force)
