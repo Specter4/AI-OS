@@ -445,8 +445,10 @@ class Applications:
             raise ValueError("args cannot contain more than 100 entries")
         total = 0
         for item in args:
-            if not isinstance(item, str) or "\x00" in item:
-                raise TypeError("Every argument must be a string without NUL characters")
+            if not isinstance(item, str):
+                raise TypeError("Every argument must be a string")
+            if "\x00" in item:
+                raise ValueError("Application arguments cannot contain NUL characters")
             if len(item) > 4096:
                 raise ValueError("An application argument exceeds 4096 characters")
             total += len(item)
